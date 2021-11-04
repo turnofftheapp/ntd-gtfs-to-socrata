@@ -7,7 +7,9 @@ Uploads GTFS data from the NTD (National Transit Database) to the https://data.b
 Set the two environment variables `SOCRATA_BTS_USERNAME` and `SOCRATA_BTS_PASSWORD`
 
 ```
-pip3 install socrata-py
-
 python3 publish_to_catalog.py
 ```
+
+# Get metadata for a given dataset
+
+https://data.bts.gov/api/views/metadata/v1/hpws-3uz8.json
