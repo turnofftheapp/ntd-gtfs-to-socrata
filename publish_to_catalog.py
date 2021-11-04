@@ -11,7 +11,7 @@ credentials = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSW
 ### Step 1: Create new revision
 ##########################
 
-dataset_name = 'GTFS Test 12'
+dataset_name = 'GTFS Test 16'
 
 description = "Agency name: <agency>\n"
 description += "Region: <region>\n"
@@ -64,7 +64,9 @@ revision_source_type = 'upload' # Options are Upload (for uploading a new file) 
 parse_source = 'false' # Parsable file types are .csv, .tsv, .xls, .xlsx, .zip (shapefile), .json (GeoJSON), .geojson, .kml, .kmz. If uploading a blob file (ie: PDFs, pictures, etc.) parse_source will be false.
 
 # @TODO: replace NTDID with the NTD ID and YYYY-MM-DD with the current date
-filename = 'NTDID_YYYY-MM-DD.zip' 
+from datetime import datetime
+now = datetime.now().strftime("%Y/%m/%d")
+filename = 'NTDID_' + now + '.zip' 
 
 source_json = json.dumps({
   'source_type': {
