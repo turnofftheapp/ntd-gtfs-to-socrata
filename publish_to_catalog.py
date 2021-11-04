@@ -7,11 +7,33 @@ domain_url = 'https://data.bts.gov'
 credentials = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 
 
+##########################
 ### Step 1: Create new revision
 ##########################
 
 dataset_name = 'GTFS Test 12'
-metadata = { 'name': dataset_name } # Minimum required metadata
+
+description = "Agency name: <agency>\n"
+description += "Region: <region>\n"
+description += "City: <city>\n"
+description += "State: <state>\n"
+#MPO Name, City, or State (not present for all agencies)
+#NTD ID
+#GTFS (Y or N)
+#URL
+
+# @TODO: set all required metadata
+metadata = { 
+  'name': dataset_name,
+  'description': description,
+  'customFields': {
+    'Common Core': {
+      'Contact Email': "test@email.com",
+      'Contact Name': "GTFS User",
+    }
+  }
+}
+
 action_type = 'update' # Options are Update, Replace, or Delete
 permission = 'private'
 
@@ -34,13 +56,15 @@ create_source_uri = revision_response.json()['links']['create_source'] # It will
 create_source_url = f'{domain_url}{create_source_uri}'
 
 
-
+##########################
 ### Step 2: Create new source
 ##########################
 
 revision_source_type = 'upload' # Options are Upload (for uploading a new file) or View (for using the existing dataset as the source)
 parse_source = 'false' # Parsable file types are .csv, .tsv, .xls, .xlsx, .zip (shapefile), .json (GeoJSON), .geojson, .kml, .kmz. If uploading a blob file (ie: PDFs, pictures, etc.) parse_source will be false.
-filename = 'testgtfs.zip'
+
+# @TODO: replace NTDID with the NTD ID and YYYY-MM-DD with the current date
+filename = 'NTDID_YYYY-MM-DD.zip' 
 
 source_json = json.dumps({
   'source_type': {
@@ -55,9 +79,11 @@ source_json = json.dumps({
 source_response = requests.post(create_source_url, data=source_json, headers=headers, auth=credentials)
 
 
+##########################
 ### Step 3: Upload File to source_type
 ##########################
 
+# @TODO
 with open('test.zip', "rb") as f:
     bytes = f.read()
 f.closed
