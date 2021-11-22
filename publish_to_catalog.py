@@ -268,6 +268,7 @@ def replaceZip():
   input_schema_id = latest_input_schema['id']
   input_schema_uri = source_response.json()['links']['input_schema_links']['transform'].format(input_schema_id=input_schema_id)
   input_schema_url = f'{domain_url}{input_schema_uri}'
+  
   update_columns_response = requests.post(input_schema_url, data=output_columns_json, headers=headers, auth=credentials)
   '''
   #Step 5: Apply revision (publish)This is the final step in creating and publishing a new asset.
