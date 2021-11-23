@@ -40,7 +40,7 @@ def setMetadata(set):
     'customFields': {
       'Common Core': {
         'Contact Email': 'NationalTransitMap@dot.gov',
-        'Contact Name': 'Derald Dudley'
+        'Contact Name': 'Derald Dudley',
         'License': "here is a license",
         'Program Code': "code",
         'Publisher':"person",
