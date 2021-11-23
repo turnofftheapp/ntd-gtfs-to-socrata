@@ -352,14 +352,18 @@ def replaceZip():
 def Main():
   testData = requests.get("https://data.bts.gov/resource/54k4-ny26.json", headers={ 'Content-Type': 'application/json' }, auth=credentials)
   output = json.loads(testData.content)
-  
+  createdDict = {} # All datasets that were created
+  updatedDict = {} # All datasets taht were updated
+  log = {"created":createdDict, "updated":updatedDict} #this is the main log that will be emailed out
   for set in output:
     if 'fourfour' in set:
       print("updating")
       updateRevision(set)
+      updatedDict[set["name"]] = "link" #later, string "link" will be the link to visit the dataset when logged in
     else:
       print("creating")
       #createNewRevision(set)
+      createdDict[set["name"]] = "link" #later, string "link" will be the link to visit the dataset when logged in
 
 
 
