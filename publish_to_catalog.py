@@ -5,33 +5,42 @@ import json
 from operator import itemgetter
 from urllib.request import urlopen
 
+# TODO: change this to DOMAIN_URL (so its recognized by Python as a constant)
 domain_url = 'https://data.bts.gov'
+AGENCY_FEED_DATASET_ID = "dw2s-2w2x"
+
 credentials = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 
-def setMetadata(set):
-  if set["gtfs"]:
-    GTFS = "Yes"
-  else:
-    GTFS = "No"
+def getMetadataFieldIfExists(fieldName, agencyFeedRow):
+  if agencyFeedRow[fieldName]:
+    return agencyFeedRow[fieldName]
+  return ""
 
-  dataset_name = set['agency_name']
-  
-  description = "Agency name: " + set['agency_name'] + "\n"
-  description += "Region: <region>\n"
-  description += "City: " + set['city'] + "\n"
-  description += "State: " + set['state'] + "\n"
+def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
+  if agencyFeedRow[fieldName]:
+    if agencyFeedRow[fieldName]["url"]:
+      return agencyFeedRow[fieldName]["url"]
+  return ""
+
+def setMetadata(set):
+  description = "Agency Name: " + set['agency_name'] + "\n"
   description += "NTD ID: " + set['ntd_id'] + "\n"
-  description += "GTFS: " + GTFS + "\n"
-  #MPO Name, City, or State (not present for all agencies)
-  #URL
+  description += "Feed ID: " + set['feed_id'] + "\n"
+  description += "GTFS: " + getMetadataFieldIfExists('has_gtfs', set) + "\n"
+  description += "GTFS URL: " + getMetadataUrlFieldIfExists('fetch_link', set) + "\n"
+  description += "Agency URL: " + getMetadataUrlFieldIfExists('agency_website', set) + "\n"
+  description += "Region: " + getMetadataFieldIfExists('uza', set) + "\n"
+  description += "City: " + getMetadataFieldIfExists('city', set) + "\n" # Update
+  description += "State: " + getMetadataFieldIfExists('state', set) + "\n" # Update
+  
   # @TODO: set all required metadata
-  metadata = { 
-    'name': dataset_name,
+  return { 
+    'name': "NTM: " + set['ntd_name'],
     'description': description,
     'customFields': {
-      'Common Core':{
-        'Contact Email': "test@email.com",
-        'Contact Name': "GTFS User",
+      'Common Core': {
+        'Contact Email': 'NationalTransitMap@dot.gov',
+        'Contact Name': 'Derald Dudley',
         'License': "here is a license",
         'Program Code': "code",
         'Publisher':"person",
@@ -40,7 +49,6 @@ def setMetadata(set):
       }
     } 
   }
-  return metadata
 
 
 
@@ -95,7 +103,7 @@ def createNewRevision(set):
   ### Step 3: Upload File to source_type
   ##########################
 
-  resp = requests.get(url=set['gtfs_url']['url'])
+  resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', set))
   bytes = resp.content
   #pdb.set_trace()
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
@@ -104,10 +112,9 @@ def createNewRevision(set):
   upload_response = requests.post(upload_url, data=bytes, headers=upload_headers, auth=credentials)
 
 
+# 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
-def updateRevision(set):
-  #fourfour = set['fourfour']
-  fourfour = '9j55-uci8' #this is from the mini test Adrian suggested, pionting the revision to a private but published dataset with all metadata
+def updateRevision(fourfour, set):
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
   ########
@@ -158,8 +165,7 @@ def updateRevision(set):
   ##########################
   ### Step 3: Upload File to source_type
   ##########################
-  resp = requests.get(url='https://yakimatransit.org/gtfs/yakima_gtfs.zip') #this is from the mini test Adrian suggested, pionting the revision to a private but published dataset with all metadata
-  #resp = requests.get(url=set['gtfs_url']['url'])
+  resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', set))
   bytes = resp.content
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{domain_url}{upload_uri}'
@@ -350,18 +356,26 @@ def replaceZip():
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def Main():
-  testData = requests.get("https://data.bts.gov/resource/54k4-ny26.json", headers={ 'Content-Type': 'application/json' }, auth=credentials)
-  output = json.loads(testData.content)
+  agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers={ 'Content-Type': 'application/json' }, auth=credentials)
   
-  for set in output:
-    if 'fourfour' in set:
-      print("updating")
-      updateRevision(set)
-    else:
-      print("creating")
-      #createNewRevision(set)
+  for agencyFeedRow in json.loads(agencyFeedResponse.content):
+    
+    #pdb.set_trace()
+    
+    # Only import feeds where original_consent_declined field is FALSE
+    if 'original_consent_declined' in agencyFeedRow:
+      if agencyFeedRow['original_consent_declined'] == False:
 
+        # TEMP lines to comment/uncomment:
+        print("creating")
+        createNewRevision(agencyFeedRow)
 
+        #pdb.set_trace()
+        
+        # print("updating")
+        #updateRevision('9j55-uci8', agencyFeedRow) 
+
+        # TODO: call function here  that looks through metadata to determine if datast exists and returns the given fourfour, if no fourfour returned, create a new dataset
 
 
 Main()
