@@ -149,7 +149,7 @@ def updateRevision(fourfour, set):
   filename = set['ntd_id'] + " " + now + '.zip' 
   revision_source_type = 'upload'
   ##########################
-  parse_source = 'true'
+  parse_source = 'false'
   ##########################
   source_json = json.dumps({
     'source_type': {
@@ -379,12 +379,3 @@ def Main():
 
 
 Main()
-
-
-
-
-
-
-
-
-
