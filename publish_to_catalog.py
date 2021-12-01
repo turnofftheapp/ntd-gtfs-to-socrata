@@ -17,6 +17,7 @@ CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", header
 
 
 
+
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if agencyFeedRow[fieldName]:
     return agencyFeedRow[fieldName]
@@ -54,8 +55,8 @@ def setMetadata(set):
         'Bureau Code': "other code",
         'Public Access Level': "10"
       }
-    }#,
-    #'tags': ["national transit map"]
+    },
+    'tags': ["national transit map"]
   }
 
 
@@ -204,13 +205,12 @@ def getCatalogEntryFeedID(catalogRowDescription):
       FeedID = regexResult.group() # Querys the result for just what was found in the description based on the logic written in the re.compile() statement
       return FeedID
 
-
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
 # in the catalog entries descriptions.
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    #if 'national transit map' in catalogRow['tags']:
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None:
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
       else:
@@ -240,10 +240,10 @@ def Main():
 
         if agencyFeedRowPresent == None:
           print("creating")
-          #createNewRevision(agencyFeedRow)
+          createNewRevision(agencyFeedRow)
         else:
           print("replacing")
-          #updateRevision(agencyFeedRowPresent,agencyFeedRow)
+          updateRevision(agencyFeedRowPresent,agencyFeedRow)
         
 
 Main()
