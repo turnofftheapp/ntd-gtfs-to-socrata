@@ -91,7 +91,9 @@ def revision(fourfour, agencyFeedRow):
   now = datetime.now().strftime("%Y-%m-%d")
   filename = agencyFeedRow['ntd_id'] + " " + now + '.zip' 
   revision_source_type = 'upload'
+
   parse_source = 'false'
+
   source_json = json.dumps({
     'source_type': {
       'type': revision_source_type,
@@ -175,4 +177,6 @@ def Main():
         revision(agencyFeedRowFourfour,agencyFeedRow)
         
 
+
 Main()
+
