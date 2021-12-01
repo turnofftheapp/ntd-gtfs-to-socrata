@@ -44,15 +44,17 @@ def setMetadata(agencyFeedRow):
   return { 
     'name': "NTM: " + agencyFeedRow['ntd_name'],
     'description': description,
-    'customFields': {
-      'Common Core': {
-        'Contact Email': 'NationalTransitMap@dot.gov',
-        'Contact Name': 'Derald Dudley',
-        'License': "here is a license",
-        'Program Code': "code",
-        'Publisher':"person",
-        'Bureau Code': "other code",
-        'Public Access Level': "10"
+    "metadata" : {
+      "custom_fields" : {
+        "Common Core" : {
+          "Contact Email" : "Derald Dudley",
+          "Contact Name" : "NationalTransitMap@dot.gov",
+          "License" : "https://creativecommons.org/licenses/by/4.0/",
+          "Program Code" : "021:000",
+          "Publisher" : "Bureau of Transportation Statistics",
+          "Bureau Code" : "021:00",
+          "Public Access Level" : "public"
+        }
       }
     },
     'tags': ["national transit map"]
@@ -130,7 +132,7 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  
+  return apply_revision_response
 
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
@@ -162,22 +164,37 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def Main():
+  # The below will be the change log that is emailed out once the script is finished running
+  dataCreated = {}
+  dataUpdated = {}
+  changeLog = {"data created" : dataCreated, "data updated" : dataUpdated}
+
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
     # Only import feeds where original_consent_declined field is FALSE
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
+        
         # The line below calls the function that looks through metadata to determine if dataset exists 
         # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
         # create or replace is made for that row of incoming data
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+        revisionResponse = revision(agencyFeedRowFourfour,agencyFeedRow)
+        #print(revisionResponse.status_code)
+        #print(agencyFeedRowFourfour)
 
-        if agencyFeedRowFourfour == None:
+        name = agencyFeedRow['ntd_name']
+        feedID = agencyFeedRow['feed_id']
+        dataLink = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+        if agencyFeedRowFourfour == None and revisionResponse.status_code == 200:
           print("creating")
-        else:
+          dataCreated[feedID] = [name,dataLink]
+        elif agencyFeedRowFourfour != None:
           print("replacing")
-        revision(agencyFeedRowFourfour,agencyFeedRow)
+          dataUpdated[feedID] = [name,dataLink]
+        pdb.set_trace()
+        
         
 
 
