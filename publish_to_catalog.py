@@ -1,7 +1,9 @@
+#from _typeshed import NoneType
 import pdb
 import requests
 import os
 import json
+import re
 from operator import itemgetter
 from urllib.request import urlopen
 from datetime import datetime
@@ -52,7 +54,8 @@ def setMetadata(agencyFeedRow):
         'Bureau Code': "other code",
         'Public Access Level': "10"
       }
-    } 
+    },
+    'tags': ["national transit map"]
   }
 
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
