@@ -42,17 +42,19 @@ def setMetadata(agencyFeedRow):
   return { 
     'name': "NTM: " + agencyFeedRow['ntd_name'],
     'description': description,
-    'customFields': {
-      'Common Core': {
-        'Contact Email': 'NationalTransitMap@dot.gov',
-        'Contact Name': 'Derald Dudley',
-        'License': "here is a license",
-        'Program Code': "code",
-        'Publisher':"person",
-        'Bureau Code': "other code",
-        'Public Access Level': "10"
+    "metadata" : {
+      "custom_fields" : {
+        "Common Core" : {
+          "Contact Email" : "Derald Dudley",
+          "Contact Name" : "NationalTransitMap@dot.gov",
+          "License" : "https://creativecommons.org/licenses/by/4.0/",
+          "Program Code" : "021:000",
+          "Publisher" : "Bureau of Transportation Statistics",
+          "Bureau Code" : "021:00",
+          "Public Access Level" : "public"
+        }
       }
-    } 
+    }
   }
 
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
