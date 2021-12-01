@@ -136,30 +136,55 @@ def revision(fourfour, set):
   pdb.set_trace()
 
 
+# Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
+def getCatalogEntryFeedID(catalogRowDescription):
+    regexLogic = re.compile('[\n]Feed ID: [0-9]+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
+    regexResult = regexLogic.search(catalogRowDescription) # Applys the logic above to the actual description
+    if regexResult == None:
+      return None
+    else:
+      FeedID = regexResult.group() # Querys the result for just what was found in the description based on the logic written in the re.compile() statement
+      return FeedID
+
+# Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
+# in the catalog entries descriptions.
+# Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
+def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
+  for catalogRow in CURRENT_CATALOG:
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+      if catalogRow['description'] == None:
+        existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
+      else:
+        existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
+      
+      if existingFeedID == incoming_feed_id: 
+        return catalogRow['id'] # This is a fourfour
+  return None
+      
+
+
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def Main():
+  # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers={ 'Content-Type': 'application/json' }, auth=credentials)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
-    
-    #pdb.set_trace()
-    
     # Only import feeds where original_consent_declined field is FALSE
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
+        # The line below calls the function that looks through metadata to determine if dataset exists 
+        # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
+        # create or replace is made for that row of incoming data
+        agencyFeedRowPresent = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
 
-        # TEMP lines to comment/uncomment:
-        print("creating")
-        revision(agencyFeedRow)
-
-        #pdb.set_trace()
+        if agencyFeedRowPresent == None:
+          print("creating")
+          createNewRevision(agencyFeedRow)
+        else:
+          print("replacing")
+          updateRevision(agencyFeedRowPresent,agencyFeedRow)
         
-        # print("updating")
-        #updateRevision('9j55-uci8', agencyFeedRow) 
-
-        # TODO: call function here  that looks through metadata to determine if datast exists and returns the given fourfour, if no fourfour returned, create a new dataset
-
 
 Main()
