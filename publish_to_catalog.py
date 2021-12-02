@@ -90,6 +90,7 @@ def revision(fourfour, agencyFeedRow):
   update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   if fourfour == None:
     fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
+    
   create_source_uri = update_revision_response.json()['links']['create_source'] # It will also return the URL you need to create a source
   create_source_url = f'{DOMAIN_URL}{create_source_uri}'
 
@@ -111,6 +112,7 @@ def revision(fourfour, agencyFeedRow):
       'parse_source': parse_source
     }
   })
+  # The below is not working when updating.
   source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
   ##########################
@@ -118,6 +120,7 @@ def revision(fourfour, agencyFeedRow):
   ##########################
   resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
   bytes = resp.content
+  pdb.set_trace()
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   #upload_headers = { 'Content-Type': 'text/csv' }
@@ -147,9 +150,8 @@ def getCatalogEntryFeedID(catalogRowDescription):
     if locateResult == None:
       return None
     else:
-      extractLogic = re.compile('[0-9]*')
-      extractResult = extractLogic.search(locateResult.group())
-      feedID = extractResult.group() # Querys the result for just what was found in the description based on the logic written in the re.compile() statement
+      locateResultList = locateResult.group().split(" ")
+      feedID = locateResultList[2][:len(locateResultList[2]) -1]
       return feedID
 
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
@@ -160,10 +162,17 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None:
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
+        #print("existingFeedID No desc")
+        #print(existingFeedID)
       else:
         existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
+        #print("existingFeedID desc")
+        #print(existingFeedID)
+      #pdb.set_trace()
       if existingFeedID == incoming_feed_id: 
+        #print("################################# catalogRow['id']: "+catalogRow['id'])
         return catalogRow['id'] # This is a fourfour
+
   return None
       
 # This is the highest level function that takes in the data, iterates through it, 
@@ -189,7 +198,7 @@ def Main():
         revisionResponse = revision(agencyFeedRowFourfour,agencyFeedRow)
         #print(revisionResponse.status_code)
         #print(agencyFeedRowFourfour)
-
+"""
         name = agencyFeedRow['ntd_name']
         feedID = agencyFeedRow['feed_id']
         dataLinkStart = 'https://data.bts.gov/d/'
@@ -206,7 +215,7 @@ def Main():
           print("got to updated")
           dataUpdated[feedID] = changelogValue
         
-        
+        """
         
 
 
