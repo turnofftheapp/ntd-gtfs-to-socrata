@@ -63,14 +63,17 @@ def setMetadata(agencyFeedRow):
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
+  print(fourfour)
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
   ########
   revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
   if fourfour == None:
+    print("creating")
     action_type = 'update' #Options are Update, Replace, or Delete
     url_for_step_1_post = revision_url
   else:
+    print("updating")
     action_type = 'replace'
     url_for_step_1_post = f'{revision_url}/{fourfour}'
   #headers = { 'Content-Type': 'application/json' }
@@ -133,16 +136,20 @@ def revision(fourfour, agencyFeedRow):
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   return apply_revision_response
+  
 
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
 def getCatalogEntryFeedID(catalogRowDescription):
-    regexLogic = re.compile('[\n]Feed ID: [0-9]+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
-    regexResult = regexLogic.search(catalogRowDescription) # Applys the logic above to the actual description
-    if regexResult == None:
+    
+    locateLogic = re.compile('[\n]Feed ID: [0-9]+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
+    locateResult = locateLogic.search(catalogRowDescription) # Applys the logic above to the actual description
+    if locateResult == None:
       return None
     else:
-      feedID = regexResult.group() # Querys the result for just what was found in the description based on the logic written in the re.compile() statement
+      extractLogic = re.compile('[0-9]*')
+      extractResult = extractLogic.search(locateResult.group())
+      feedID = extractResult.group() # Querys the result for just what was found in the description based on the logic written in the re.compile() statement
       return feedID
 
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
@@ -155,7 +162,6 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
       else:
         existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
-      
       if existingFeedID == incoming_feed_id: 
         return catalogRow['id'] # This is a fourfour
   return None
@@ -186,14 +192,20 @@ def Main():
 
         name = agencyFeedRow['ntd_name']
         feedID = agencyFeedRow['feed_id']
-        dataLink = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+        dataLinkStart = 'https://data.bts.gov/d/'
+        
+        # TODO find the fourfour of the newly created sets 
+        # TODO change the condition of the if & elif statements below since we will have a fourfour either way
+        fourfour = agencyFeedRowFourfour 
+
+        changelogValue = [name,f'{dataLinkStart}{fourfour}'] #maybe consider .format
         if agencyFeedRowFourfour == None and revisionResponse.status_code == 200:
-          print("creating")
-          dataCreated[feedID] = [name,dataLink]
+          print("to go created")
+          dataCreated[feedID] = changelogValue
         elif agencyFeedRowFourfour != None:
-          print("replacing")
-          dataUpdated[feedID] = [name,dataLink]
-        pdb.set_trace()
+          print("got to updated")
+          dataUpdated[feedID] = changelogValue
+        
         
         
 
