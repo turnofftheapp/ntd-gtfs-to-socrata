@@ -91,9 +91,9 @@ def revision(fourfour, agencyFeedRow):
   if fourfour == None:
     fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
     
-  create_source_uri = update_revision_response.json()['links']['create_source'] # It will also return the URL you need to create a source
+  create_source_uri = update_revision_response.json()['links']['create_source'] # It will also return the URL you need to create a source 
   create_source_url = f'{DOMAIN_URL}{create_source_uri}'
-
+  
   ##########################
   ### Step 2: Create new source
   ##########################
@@ -112,6 +112,7 @@ def revision(fourfour, agencyFeedRow):
       'parse_source': parse_source
     }
   })
+  pdb.set_trace()
   # The below is not working when updating.
   source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
