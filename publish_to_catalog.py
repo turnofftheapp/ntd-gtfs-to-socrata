@@ -69,11 +69,9 @@ def revision(fourfour, agencyFeedRow):
   ########
   revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
   if fourfour == None:
-    print("creating")
     action_type = 'update' #Options are Update, Replace, or Delete
     url_for_step_1_post = revision_url
   else:
-    print("updating")
     action_type = 'replace'
     url_for_step_1_post = f'{revision_url}/{fourfour}'
   #headers = { 'Content-Type': 'application/json' }
@@ -112,7 +110,7 @@ def revision(fourfour, agencyFeedRow):
       'parse_source': parse_source
     }
   })
-  pdb.set_trace()
+  
   # The below is not working when updating.
   source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
@@ -121,7 +119,7 @@ def revision(fourfour, agencyFeedRow):
   ##########################
   resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
   bytes = resp.content
-  pdb.set_trace()
+  
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   #upload_headers = { 'Content-Type': 'text/csv' }
@@ -169,13 +167,46 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
         existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
         #print("existingFeedID desc")
         #print(existingFeedID)
-      #pdb.set_trace()
+      
       if existingFeedID == incoming_feed_id: 
         #print("################################# catalogRow['id']: "+catalogRow['id'])
         return catalogRow['id'] # This is a fourfour
 
   return None
       
+# Copied with minor modifications from this commit (on main branch): https://github.com/turnofftheapp/ntd-to-socrata-bts/commit/8cfb9b25086f1f88b26a8f1a8da99fc20ba7b510
+def updateMetadataRevision(fourfour, agencyFeedRow):
+  ########
+  ### Step 1: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take (which will be 'update' in this case).This sample shows the default public metadata fields, but you can also update custom and private metadata here.
+  ########
+  headers = { 'Content-Type': 'application/json' }
+  revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
+  action_type = 'update'
+  metadata = setMetadata(agencyFeedRow)
+  body = json.dumps({
+    'metadata': metadata,
+      'action': {
+        'type': action_type
+      }
+  })
+
+  update_revision_url = f'{revision_url}/{fourfour}'
+  update_revision_response = requests.post(update_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  #########
+  #Step 2: Apply revisionHere you just apply your revision as you would if you were updating data.
+  #########
+  apply_revision_uri = update_revision_response.json()['links']['apply']
+  apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
+  revision_number = update_revision_response.json()['resource']['revision_seq']
+
+  body = json.dumps({
+  'resource': {
+      'id': revision_number
+    }
+  })
+  apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+
+
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
@@ -196,10 +227,7 @@ def Main():
         # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
         # create or replace is made for that row of incoming data
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-        revisionResponse = revision(agencyFeedRowFourfour,agencyFeedRow)
-        #print(revisionResponse.status_code)
-        #print(agencyFeedRowFourfour)
-"""
+
         name = agencyFeedRow['ntd_name']
         feedID = agencyFeedRow['feed_id']
         dataLinkStart = 'https://data.bts.gov/d/'
@@ -209,14 +237,19 @@ def Main():
         fourfour = agencyFeedRowFourfour 
 
         changelogValue = [name,f'{dataLinkStart}{fourfour}'] #maybe consider .format
-        if agencyFeedRowFourfour == None and revisionResponse.status_code == 200:
-          print("to go created")
+        if agencyFeedRowFourfour == None:
+          print("creating")
           dataCreated[feedID] = changelogValue
-        elif agencyFeedRowFourfour != None:
-          print("got to updated")
+          revision(None, agencyFeedRow)
+        else:
+          print("replacing")
           dataUpdated[feedID] = changelogValue
-        
-        """
+          updateMetadataRevision(agencyFeedRowFourfour, agencyFeedRow)
+
+        #pdb.set_trace()
+
+        # Temporarily disabling 
+        #revision(agencyFeedRowFourfour,agencyFeedRow)
         
 
 
