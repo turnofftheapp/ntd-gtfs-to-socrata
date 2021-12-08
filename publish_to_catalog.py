@@ -7,12 +7,13 @@ import re
 from operator import itemgetter
 from urllib.request import urlopen
 from datetime import datetime
-import re
+
+
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
-DOMAIN_URL = 'https://data.bts.gov'
+DOMAIN_URL = 'https://data.bts.gov' #/api/publishing/v1/revision/e7b3-nb2w/12
 AGENCY_FEED_DATASET_ID = "dw2s-2w2x"
 CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is the link to all sets in the NTD catalog
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
@@ -175,14 +176,20 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   return None
       
 # Copied with minor modifications from this commit (on main branch): https://github.com/turnofftheapp/ntd-to-socrata-bts/commit/8cfb9b25086f1f88b26a8f1a8da99fc20ba7b510
-def updateMetadataRevision(fourfour, agencyFeedRow):
+def updateMetadataRevision(fourfour):
   ########
-  ### Step 1: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take (which will be 'update' in this case).This sample shows the default public metadata fields, but you can also update custom and private metadata here.
+  ### Step 1: Create new revisionIn this step you will want to put the metadata you'd like to update 
+  ### in JSON format along with the action you'd like to take (which will be 'update' in this case).
+  ### This sample shows the default public metadata fields, but you can also update custom and private 
+  ### metadata here.
   ########
   headers = { 'Content-Type': 'application/json' }
   revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
-  action_type = 'update'
-  metadata = setMetadata(agencyFeedRow)
+  #action_type = 'update' #out of the box value
+  action_type = 'replace'
+  #metadata = setMetadata(agencyFeedRow)
+  metadata = { 'name': "agencyFeedName" } # Minimum required metadata
+  
   body = json.dumps({
     'metadata': metadata,
       'action': {
@@ -192,8 +199,43 @@ def updateMetadataRevision(fourfour, agencyFeedRow):
 
   update_revision_url = f'{revision_url}/{fourfour}'
   update_revision_response = requests.post(update_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  
+  # Step 2A
+  # In this step you create a new source, to which you'll attach a file in step 3. Think of this as setting 
+  # up the guidelines for where your data is going to come from and what it's going to look like.
+  create_source_uri = update_revision_response.json()['links']['update']
+  create_source_url = f'{DOMAIN_URL}{create_source_uri}'
+  revision_source_type = 'View' # Options are Upload (for uploading a new file) or View (for using the existing dataset as the source)
+  parse_source = 'false' # Parsable file types are .csv, .tsv, .xls, .xlsx, .zip (shapefile), .json (GeoJSON), .geojson, .kml, .kmz. If uploading a blob file (ie: PDFs, pictures, etc.) parse_source will be false.
+  filename = 'cool_dataset.csv'
+
+  source_json = json.dumps({
+    'source_type': {
+      'type': revision_source_type,
+      'filename': filename
+    },
+    'parse_options': {
+      'parse_source': parse_source
+    }
+  })
+
+  source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  # Step 3: Upload File to source_type In this step, you actually pass the file to the source that you created
+  # in Step 2. In this example, a file is being passed from a local directory.
+  bytes = "This,is,a,bytes,string,maybe"
+  
+  pdb.set_trace()
+  upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+  upload_url = f'{DOMAIN_URL}{upload_uri}'
+  upload_headers = { 'Content-Type': 'text/csv' }
+
+  upload_response = requests.post(upload_url, data=bytes, headers=upload_headers, auth=CREDENTIALS)
+  
+  
+  
+  
   #########
-  #Step 2: Apply revisionHere you just apply your revision as you would if you were updating data.
+  #Step 2B: Apply revisionHere you just apply your revision as you would if you were updating data.
   #########
   apply_revision_uri = update_revision_response.json()['links']['apply']
   apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
@@ -205,6 +247,12 @@ def updateMetadataRevision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+
+# This updates the zip file of an already existing dataset in the catalog
+
+
+
+
 
 
 # This is the highest level function that takes in the data, iterates through it, 
@@ -253,5 +301,6 @@ def Main():
         
 
 
-Main()
+#Main()
+updateMetadataRevision("e7b3-nb2w")
 
