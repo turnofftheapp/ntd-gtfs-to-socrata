@@ -2,6 +2,7 @@
 from socrata.authorization import Authorization
 from socrata import Socrata
 import os
+
 import pdb
 import requests
 import json
@@ -17,6 +18,7 @@ auth = Authorization(
   os.environ['SOCRATA_BTS_USERNAME'],
   os.environ['SOCRATA_BTS_PASSWORD']
 )
+
 
 # This is how we create our view initially
 with open('cool_dataset.csv', 'rb') as file:
