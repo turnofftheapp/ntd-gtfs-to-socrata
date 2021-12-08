@@ -48,8 +48,8 @@ def setMetadata(agencyFeedRow):
     "metadata" : {
       "custom_fields" : {
         "Common Core" : {
-          "Contact Email" : "Derald Dudley",
-          "Contact Name" : "NationalTransitMap@dot.gov",
+          "Contact Email" : "NationalTransitMap@dot.gov",
+          "Contact Name" : "Derald Dudley",
           "License" : "https://creativecommons.org/licenses/by/4.0/",
           "Program Code" : "021:000",
           "Publisher" : "Bureau of Transportation Statistics",
