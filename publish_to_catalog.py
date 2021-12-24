@@ -17,6 +17,13 @@ AGENCY_FEED_DATASET_ID = "dw2s-2w2x"
 CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is the link to all sets in the NTD catalog
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 
+# The below will be the change log for the metadata that is emailed out once the script is finished running
+DATA_CREATED = {}
+DATA_UPDATED = {}
+CHANGE_LOG = {"data created" : DATA_CREATED, "data updated" : DATA_UPDATED}
+
+# The below will be the change log for the bus stop data
+BUS_STOP_CHANGES = {}
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if agencyFeedRow[fieldName]:
@@ -59,6 +66,10 @@ def setMetadata(agencyFeedRow):
     },
     'tags': ["national transit map"]
   }
+
+# This function runs for every agency feed that a revision is made for 
+def updateTransitStopDataset(ZipFileBytes):
+  
 
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
@@ -119,7 +130,7 @@ def revision(fourfour, agencyFeedRow):
   ##########################
   resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
   bytes = resp.content
-  
+  updateTransitStopDataset(bytes)
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   #upload_headers = { 'Content-Type': 'text/csv' }
@@ -137,7 +148,7 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  return apply_revision_response
+  #return apply_revision_response
   
 
 
@@ -175,15 +186,12 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   return None
 
 
+
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
-def Main():
-  # The below will be the change log that is emailed out once the script is finished running
-  dataCreated = {}
-  dataUpdated = {}
-  changeLog = {"data created" : dataCreated, "data updated" : dataUpdated}
-
+def updateCatalog():
+  
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
@@ -207,19 +215,24 @@ def Main():
         changelogValue = [name,f'{dataLinkStart}{fourfour}'] #maybe consider .format
         if agencyFeedRowFourfour == None:
           print("creating")
-          dataCreated[feedID] = changelogValue
+          DATA_CREATED[feedID] = changelogValue
           revision(None, agencyFeedRow)
         else:
           print("replacing")
-          dataUpdated[feedID] = changelogValue
+          DATA_UPDATED[feedID] = changelogValue
           revision(agencyFeedRowFourfour, agencyFeedRow)
 
         #pdb.set_trace()
 
         # Temporarily disabling 
         #revision(agencyFeedRowFourfour,agencyFeedRow)
-        
 
+
+
+
+def Main():
+  updateCatalog()
+  
 
 Main()
 
