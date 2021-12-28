@@ -8,6 +8,7 @@ from operator import itemgetter
 from urllib.request import urlopen
 from datetime import datetime
 import re
+from zipfile import ZipFile
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
@@ -16,6 +17,11 @@ DOMAIN_URL = 'https://data.bts.gov'
 AGENCY_FEED_DATASET_ID = "dw2s-2w2x"
 CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is the link to all sets in the NTD catalog
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
+
+
+# Just to read the source_responses more easily
+def pPrint(object):
+  print(json.dumps(object,indent=4))
 
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -124,7 +130,7 @@ def revision(fourfour, agencyFeedRow):
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   #upload_headers = { 'Content-Type': 'text/csv' }
   upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-  
+  pdb.set_trace()
   #########
   #Step 2a(5): Apply revisionHere you just apply your revision as you would if you were updating data.
   #########
@@ -136,9 +142,18 @@ def revision(fourfour, agencyFeedRow):
       'id': revision_number
     }
   })
-  apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  return apply_revision_response
+  #apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  #return apply_revision_response
   
+# Parses the GTFS zip file link out of the decodedMetadata
+def getZipUrl(description):
+  locateLogic = re.compile('\\nGTFS URL: .*\.zip\\n')
+  locateResult = locateLogic.search(description)
+  if locateResult == None:
+    return None
+  else:
+    locateResultList = locateResult.group().split(" ")
+    return locateResultList[2].strip()
 
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
@@ -174,20 +189,124 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 
   return None
 
+# This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
+# busStopEntry in the catalog, that busStop is added
+def updateTransitStopDataset():
+  #catalogBusStopData1 = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', 'https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89'))
+  #catalogBusBytes1 = catalogBusStopData1.content
+
+  allCatalogBusStops = requests.get(url='https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89')
+  catalogBusStopBytes = allCatalogBusStops.content
+
+  # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
+  # and add that data to the catalog bus stop data
+  for catalogRow in CURRENT_CATALOG: 
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+      print(catalogRow['description']) 
+      catalogEntryZip = getZipUrl(catalogRow['description'])
+      print(catalogEntryZip)
+      
+      # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
+      # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
+      zipRequest = requests.get(url=catalogEntryZip)
+      pdb.set_trace()
+
+
+
+      catalogRow['id'] # This is a fourfour
+      print(catalogRow['id'])
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
+First attempt, but I realized that iterating through the catalog data made WAY more sense
+  # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
+  agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  
+  for agencyFeedRow in json.loads(agencyFeedResponse.content):
+    # Only import feeds where original_consent_declined field is FALSE
+    #pdb.set_trace()
+    if 'original_consent_declined' in agencyFeedRow:
+      if agencyFeedRow['original_consent_declined'] == False:
+        agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+        metaDataLinkStart = 'https://data.bts.gov/api/views/metadata/v1/'
+        metaDataUrl = f'{metaDataLinkStart}{agencyFeedRowFourfour}'
+        metaDataRequest = requests.get(url=metaDataUrl, auth=CREDENTIALS)
+        metaDataBytes = metaDataRequest.content
+        
+        decodedMetaData = metaDataBytes.decode('utf-8')
+        print(type(decodedMetaData))
+        zipUrl = getZipUrl(decodedMetaData)
+        print('zipUrl')
+        print(zipUrl)
+     
+
+
+        with ZipFile(zipFileBytes, 'r') as zipObject:
+          listOfFileNames = zipObject.namelist()
+          for fileName in listOfFileNames:
+              if fileName == 'stops.txt':
+                  # Extract a single file from zip
+                  zipObject.extract(fileName, 'temp_py')
+                  print('All the python files are extracted')
+
+  '''
+
+
+
+"""
+  #Sudo code
+    busStopData = query API for busStop data
+    dataSets = query API for all datasets
+    for agency in dataSets
+      open ZIP file
+      locate busStop file
+      busStops = get busStop files data
+      for each busStop in busStops
+        if busStop is not in busStopData
+          post busStop to busStopData
+          importedAgencies.append(agencyWhereThisStopCameFrom)
+        else
+          pass
+    return importedAgencies
+  """
+
 
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
-def Main():
+def updateCatalog():
   # The below will be the change log that is emailed out once the script is finished running
   dataCreated = {}
   dataUpdated = {}
   changeLog = {"data created" : dataCreated, "data updated" : dataUpdated}
+  
+
+
 
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
     # Only import feeds where original_consent_declined field is FALSE
+    #pdb.set_trace()
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
         
@@ -220,6 +339,9 @@ def Main():
         #revision(agencyFeedRowFourfour,agencyFeedRow)
         
 
+def Main():
+  #updateCatalog()
+  updateTransitStopDataset()
 
 Main()
 
