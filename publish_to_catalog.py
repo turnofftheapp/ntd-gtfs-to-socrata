@@ -12,6 +12,10 @@ import zipfile
 from zipfile import ZipFile
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
+# I know it is bad practice to hard code passwords into a file, but since other people are going to
+# be using this in the future, shouldn't we be including it in here so that every employee who uses 
+# this doesn't need to add a new environment variable?
+APP_TOKEN = {'X-APP-Token': 'FvuD9i0QMVotyBS8KxUOT5CvE'}
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
@@ -20,6 +24,8 @@ CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is th
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89'
 ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
+
+
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if agencyFeedRow[fieldName]:
@@ -203,9 +209,17 @@ def makeStopLine(stop,feedID):
   # The below if statment is to ensure the header line is built properly
   if(stopName == 'stop_name'):
     feedID = 'feed_id'
-  feed_id_stop_id = feedID + "_" + stopID
+    locationType = 'location_type'
+    stopLocation = 'stop_location'
+  else: 
+    # feed_id_stop_id is created outside this else loop because its only the feed_id that needs to be adjusted based on whether or not
+    # the entry is the first one
+    stopLocation = 'POINT('+stopLon+' '+stopLat+')'
+    locationType = '0' #this one Ill definitely have to check up on
 
-  stopUpsertLine = feed_id_stop_id + ',' + stopID + ',' + stopLat + ',' + stopLon + "\n"
+  feed_id_stop_id = feedID + "_" + stopID
+  
+  stopUpsertLine = feed_id_stop_id + ',' + stopID +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
   return stopUpsertLine
 
 
@@ -235,15 +249,16 @@ def updateTransitStopDataset():
           print("stopFile")
           stringStops = stopFile.decode('UTF-8').split("\n")
           existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
-          with open(currentLocation+"/tempcsv.csv","w") as csv:
-            for stop in stringStops:
-              if (stop != ""):
-                newStopLine = makeStopLine(stop,existingFeedID)
-                csv.write(newStopLine)
+          newStopData = ""
+          count = 0
+          for stop in stringStops:
+            if (stop != ""):
+              newStopLine = makeStopLine(stop,existingFeedID)
+              count += 1
+              newStopData = newStopData + newStopLine
+          r = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+          print(count)
           os.remove(currentLocation+"/tempzip.zip")
-          #requests.post(ALL_STOP_LOCATIONS_ENDPOINT, "/Users/johnkovacs/tempcsv.csv", headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-          pdb.set_trace() #here is where we will post the csv file to the stops endpoint
-          os.remove(currentLocation+"/tempcsv.csv")
 
 
 # This is the highest level function that takes in the data, iterates through it, 
@@ -259,7 +274,7 @@ def updateCatalog():
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
     # Only import feeds where original_consent_declined field is FALSE
-    #pdb.set_trace()
+  
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
         
@@ -286,10 +301,6 @@ def updateCatalog():
           dataUpdated[feedID] = changelogValue
           revision(agencyFeedRowFourfour, agencyFeedRow)
 
-        #pdb.set_trace()
-
-        # Temporarily disabling 
-        #revision(agencyFeedRowFourfour,agencyFeedRow)
         
 
 def Main():
