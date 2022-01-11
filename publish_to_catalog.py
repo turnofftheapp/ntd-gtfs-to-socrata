@@ -10,8 +10,6 @@ from datetime import datetime
 import re
 import zipfile
 from zipfile import ZipFile
-from feedvalidator import RunValidation
-import transitfeed
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 # I know it is bad practice to hard code passwords into a file, but since other people are going to
@@ -31,21 +29,6 @@ CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
 
 
-# The below class came from testfeedvalidator.py, it is how I found out how to make an options object to use to validate
-# the zip files. The only change I am making is the self.output, I am going to make that be the zip file that is to be validated.
-class ZipOptions:
-  """Pretend to be an optparse options object suitable for testing."""
-  def __init__(self,zip):
-    self.limit_per_type = 5
-    self.memory_db = True
-    self.check_duplicate_trips = True
-    self.latest_version = transitfeed.__version__
-    #self.output = 'fake-filename.zip' # this is the old self.output definition
-    self.output = zip
-    self.manual_entry = False
-    self.service_gap_interval = None
-    self.extension = None
-    self.error_types_ignore_list = None
 
 # The below will be the change log that is emailed out once the script is finished running
 BUS_STOPS_UPSERTED = {}
@@ -128,59 +111,52 @@ def makeStopLine(stop,feedID):
 # updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to
 # the bus stop data.
 def updateTransitStopDataset():
+  print("upserting stops was called")
   # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
   # and add that data to the catalog bus stop data
   for catalogRow in CURRENT_CATALOG: 
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
-      print("zip = " + catalogEntryZip)
-      print("options")
-      print(ZipOptions(catalogEntryZip))
-      print("transitfeed.ProblemReporter()")
-      print(transitfeed.ProblemReporter())
-      valid = RunValidation(catalogEntryZip, ZipOptions(catalogEntryZip), transitfeed.ProblemReporter())
-      print(valid)
-      
-      
-      
-      # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
-      # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
-      zipRequest = requests.get(catalogEntryZip)
-      
-      with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
-        zip.write(zipRequest.content)
-      z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
+      if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
+        print("zip = ")
+        print(catalogEntryZip)
+        # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
+        # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
+        zipRequest = requests.get(catalogEntryZip)
+        
+        with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
+          zip.write(zipRequest.content)
+        z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
 
-      for filename in z.namelist():
-        if filename == "stops.txt":
-          stopFile = z.read(filename)
-          print("stopFile")
-          stringStops = stopFile.decode('UTF-8').split("\n")
-          existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
-          newStopData = ""
-          count = 0
+        for filename in z.namelist():
+          print(catalogRow["name"] + "has the following files:")
+          print(filename)
+          if filename == "stops.txt":
+            stopFile = z.read(filename)
+            print("stopFile")
+            stringStops = stopFile.decode('UTF-8').split("\n")
+            existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
+            newStopData = ""
+            count = 0
 
-          for stop in stringStops:
-            if (stop != ""):
-              newStopLine = makeStopLine(stop,existingFeedID)
-              count += 1
-              newStopData = newStopData + newStopLine
-          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-          os.remove(os.getcwd()+"/tempzip.zip")
-         
-          # The below determines how to update the busStop portion of the change log based on the status of 
-          strCount = str(count)
-          if not postCatalogEntryBusStopsRequest.ok:
-            print("Error upserting bus stops")
-            countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-          else:
-            print('There were ' + strCount + ' stops upserted')
-            countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
-          updateBusChangeLog(catalogRow, countMessage)
+            for stop in stringStops:
+              if (stop != ""):
+                newStopLine = makeStopLine(stop,existingFeedID)
+                count += 1
+                newStopData = newStopData + newStopLine
+            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+            os.remove(os.getcwd()+"/tempzip.zip")
           
-
-
-
+            # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
+            strCount = str(count)
+            if not postCatalogEntryBusStopsRequest.ok:
+              print("Error upserting bus stops")
+              countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+            else:
+              print('There were ' + strCount + ' stops upserted')
+              countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
+            updateBusChangeLog(catalogRow, countMessage)
+          
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if agencyFeedRow[fieldName]:
@@ -249,6 +225,7 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
+  print("revision was called")
   print(fourfour)
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
@@ -320,7 +297,7 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  #return apply_revision_response
+  return apply_revision_response
 
 
 
@@ -366,7 +343,7 @@ def updateCatalog():
         
 
 def Main():
-  #updateCatalog()
+  updateCatalog()
   updateTransitStopDataset()
   print(CHANGE_LOG)
 
