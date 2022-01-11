@@ -116,8 +116,17 @@ def updateTransitStopDataset():
   # and add that data to the catalog bus stop data
   for catalogRow in CURRENT_CATALOG: 
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+      currentDirectory = os.getcwd()
+      print("pwd = " + currentDirectory)
+      terminalCommand1 = "java -jar " + currentDirectory + "/gtfs-validator-v-master-sha-a871d4ba-SNAPSHOT_cli.jar -u "
       catalogEntryZip = getZipUrl(catalogRow['description'])
       print("zip = " + catalogEntryZip)
+      terminalCommand2 = "https://www.abc.com/gtfs.zip -o "
+      output = "/Users/johnkovacs/Desktop/Work/GitHub/ntd-to-socrata-bts/" # Path for the validation report to be stored in
+
+      terminalCommandToValidateGTFS = terminalCommand1 + catalogEntryZip + terminalCommand2 + output
+      print("termincalCommand = " + terminalCommandToValidateGTFS)
+      os.system(terminalCommandToValidateGTFS)
       
       
       
