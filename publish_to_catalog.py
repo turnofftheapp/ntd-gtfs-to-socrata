@@ -10,8 +10,7 @@ from datetime import datetime
 import re
 import zipfile
 from zipfile import ZipFile
-from feedvalidator import RunValidation
-import transitfeed
+
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 # I know it is bad practice to hard code passwords into a file, but since other people are going to
@@ -31,21 +30,6 @@ CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
 
 
-# The below class came from testfeedvalidator.py, it is how I found out how to make an options object to use to validate
-# the zip files. The only change I am making is the self.output, I am going to make that be the zip file that is to be validated.
-class ZipOptions:
-  """Pretend to be an optparse options object suitable for testing."""
-  def __init__(self,zip):
-    self.limit_per_type = 5
-    self.memory_db = True
-    self.check_duplicate_trips = True
-    self.latest_version = transitfeed.__version__
-    #self.output = 'fake-filename.zip' # this is the old self.output definition
-    self.output = zip
-    self.manual_entry = False
-    self.service_gap_interval = None
-    self.extension = None
-    self.error_types_ignore_list = None
 
 # The below will be the change log that is emailed out once the script is finished running
 BUS_STOPS_UPSERTED = {}
@@ -134,12 +118,7 @@ def updateTransitStopDataset():
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       print("zip = " + catalogEntryZip)
-      print("options")
-      print(ZipOptions(catalogEntryZip))
-      print("transitfeed.ProblemReporter()")
-      print(transitfeed.ProblemReporter())
-      valid = RunValidation(catalogEntryZip, ZipOptions(catalogEntryZip), transitfeed.ProblemReporter())
-      print(valid)
+      
       
       
       
