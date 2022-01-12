@@ -35,8 +35,7 @@ CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED}
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
-def updateChangeLog(agencyFeedRow, action):
-  fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+def updateChangeLog(agencyFeedRow, action, fourfour):
   name = agencyFeedRow['ntd_name']
   feedID = agencyFeedRow['feed_id']
   dataLinkStart = 'https://data.bts.gov/d/'
@@ -215,35 +214,20 @@ def updateCatalog():
   
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
-        
         # The line below calls the function that looks through metadata to determine if dataset exists 
         # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
         # create or replace is made for that row of incoming data
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-
-
-        # TODO refactoring for the rest of this function in regards to how things are recorded inthe change log. We can use the function defined 
-        # at the top of the filre for this purpose, or the code below, not both.
-        name = agencyFeedRow['ntd_name']
-        feedID = agencyFeedRow['feed_id']
-        dataLinkStart = 'https://data.bts.gov/d/'
-        
-        # TODO find the fourfour of the newly created sets 
-        # TODO change the condition of the if & elif statements below since we will have a fourfour either way
-        fourfour = agencyFeedRowFourfour 
-
-        changelogValue = [name,f'{dataLinkStart}{fourfour}'] #maybe consider .format
         if agencyFeedRowFourfour == None:
           print("creating")
-          DATA_CREATED[feedID] = changelogValue
           revision(None, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,CREATE_ACTION)
+          newFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+          updateChangeLog(agencyFeedRow,CREATE_ACTION,newFourfour)
           
         else:
           print("replacing")
-          DATA_UPDATED[feedID] = changelogValue
           revision(agencyFeedRowFourfour, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,UPDATE_ACTION)
+          updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
 
 
 
