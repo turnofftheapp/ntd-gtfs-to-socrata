@@ -1,4 +1,3 @@
-#from _typeshed import NoneType
 import pdb
 import requests
 import os
@@ -7,11 +6,9 @@ import re
 from operator import itemgetter
 from urllib.request import urlopen
 from datetime import datetime
-import re
 import zipfile
 from zipfile import ZipFile
-from feedvalidator import RunValidation
-import transitfeed
+
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 # I know it is bad practice to hard code passwords into a file, but since other people are going to
@@ -28,30 +25,13 @@ ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit
 ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
-BUS_UPSERT_ACTION  = 'bus stop upsert'
 
 
-# The below class came from testfeedvalidator.py, it is how I found out how to make an options object to use to validate
-# the zip files. The only change I am making is the self.output, I am going to make that be the zip file that is to be validated.
-class ZipOptions:
-  """Pretend to be an optparse options object suitable for testing."""
-  def __init__(self,zip):
-    self.limit_per_type = 5
-    self.memory_db = True
-    self.check_duplicate_trips = True
-    self.latest_version = transitfeed.__version__
-    #self.output = 'fake-filename.zip' # this is the old self.output definition
-    self.output = zip
-    self.manual_entry = False
-    self.service_gap_interval = None
-    self.extension = None
-    self.error_types_ignore_list = None
 
 # The below will be the change log that is emailed out once the script is finished running
-BUS_STOPS_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
-CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED}
+CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED}
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
@@ -66,24 +46,7 @@ def updateChangeLog(agencyFeedRow, action):
   elif action == UPDATE_ACTION:
     DATA_UPDATED[feedID] = changelogValue
   
-# This function updates the bus stop portion of the changelog only due to the data coming from a catalogRow as opposed to an agencyFeedRow
-def updateBusChangeLog(catalogRow, countMessage):
-  fourfour = catalogRow['id']
-  name = catalogRow['name']
-  feedID = getCatalogEntryFeedID(catalogRow['description'])
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}',countMessage]
-  BUS_STOPS_UPSERTED[feedID] = changelogValue
 
-# Parses the GTFS zip file link out of the decodedMetadata
-def getZipUrl(description):
-  locateLogic = re.compile('\\nGTFS URL: .*\.zip\\n')
-  locateResult = locateLogic.search(description)
-  if locateResult == None:
-    return None
-  else:
-    locateResultList = locateResult.group().split(" ")
-    return locateResultList[2].strip()
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
 def getCatalogEntryFeedID(catalogRowDescription):
@@ -96,98 +59,6 @@ def getCatalogEntryFeedID(catalogRowDescription):
       feedID = locateResultList[2][:len(locateResultList[2]) -1]
       return feedID
 
-# This funciton takes in a line from the stop.txt file within the GTFS zip file and
-# returns it in the format needed to do a bulk upsert with a variable made of stops made with this function
-def makeStopLine(stop,feedID):
-  stopList = stop.split(",")
-  stopID = stopList[0]
-  stopName = stopList[1]
-  stopLat = stopList[2]
-  stopLon = stopList[3]
-  stopCode = stopList[4]
-  stopZoneID = stopList[5]
-
-  # The below if statment is to ensure the header line is built properly
-  if(stopName == 'stop_name'):
-    feedID = 'feed_id'
-    locationType = 'location_type'
-    stopLocation = 'stop_location'
-  else: 
-    # feed_id_stop_id is created outside this else loop because its only the feed_id that needs to be adjusted based on whether or not
-    # the entry is the first one
-    stopLocation = 'POINT('+stopLon+' '+stopLat+')'
-    locationType = '0' #this one Ill definitely have to check up on
-  feed_id_stop_id = feedID + "_" + stopID
-  
-  stopUpsertLine = feed_id_stop_id + ',' + stopID +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
-  return stopUpsertLine
-
-
-# This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
-# busStopEntry in the catalog, that busStop is added
-# updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to
-# the bus stop data.
-def updateTransitStopDataset():
-  # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
-  # and add that data to the catalog bus stop data
-  for catalogRow in CURRENT_CATALOG: 
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
-      catalogEntryZip = getZipUrl(catalogRow['description'])
-      print("zip = " + catalogEntryZip)
-      print("options")
-      print(ZipOptions(catalogEntryZip))
-      print("transitfeed.ProblemReporter()")
-      print(transitfeed.ProblemReporter())
-      valid = RunValidation(catalogEntryZip, ZipOptions(catalogEntryZip), transitfeed.ProblemReporter())
-      print(valid)
-      
-      
-      
-      # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
-      # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
-      zipRequest = requests.get(catalogEntryZip)
-      
-      with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
-        zip.write(zipRequest.content)
-      z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
-
-      for filename in z.namelist():
-        if filename == "stops.txt":
-          stopFile = z.read(filename)
-          print("stopFile")
-          stringStops = stopFile.decode('UTF-8').split("\n")
-          existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
-          newStopData = ""
-          count = 0
-
-          for stop in stringStops:
-            if (stop != ""):
-              newStopLine = makeStopLine(stop,existingFeedID)
-              count += 1
-              newStopData = newStopData + newStopLine
-          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-          os.remove(os.getcwd()+"/tempzip.zip")
-         
-          # The below determines how to update the busStop portion of the change log based on the status of 
-          strCount = str(count)
-          if not postCatalogEntryBusStopsRequest.ok:
-            print("Error upserting bus stops")
-            countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-          else:
-            print('There were ' + strCount + ' stops upserted')
-            countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
-          updateBusChangeLog(catalogRow, countMessage)
-          
-
-
-
-# The below will be the change log for the metadata that is emailed out once the script is finished running
-DATA_CREATED = {}
-DATA_UPDATED = {}
-CHANGE_LOG = {"data created" : DATA_CREATED, "data updated" : DATA_UPDATED}
-
-# The below will be the change log for the bus stop data
-BUS_STOP_CHANGES = {}
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if agencyFeedRow[fieldName]:
@@ -231,9 +102,6 @@ def setMetadata(agencyFeedRow):
     'tags': ["national transit map"]
   }
 
-# This function runs for every agency feed that a revision is made for 
-def updateTransitStopDataset(ZipFileBytes):
-  
 
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
@@ -292,7 +160,6 @@ def revision(fourfour, agencyFeedRow):
   ##########################
   resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
   bytes = resp.content
-  updateTransitStopDataset(bytes)
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -309,21 +176,9 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  #return apply_revision_response
+  return apply_revision_response
   
 
-
-# Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
-def getCatalogEntryFeedID(catalogRowDescription):
-    
-    locateLogic = re.compile('[\n]Feed ID: [0-9]+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
-    locateResult = locateLogic.search(catalogRowDescription) # Applys the logic above to the actual description
-    if locateResult == None:
-      return None
-    else:
-      locateResultList = locateResult.group().split(" ")
-      feedID = locateResultList[2][:len(locateResultList[2]) -1]
-      return feedID
 
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
 # in the catalog entries descriptions.
@@ -366,6 +221,9 @@ def updateCatalog():
         # create or replace is made for that row of incoming data
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
 
+
+        # TODO refactoring for the rest of this function in regards to how things are recorded inthe change log. We can use the function defined 
+        # at the top of the filre for this purpose, or the code below, not both.
         name = agencyFeedRow['ntd_name']
         feedID = agencyFeedRow['feed_id']
         dataLinkStart = 'https://data.bts.gov/d/'
@@ -387,21 +245,11 @@ def updateCatalog():
           revision(agencyFeedRowFourfour, agencyFeedRow)
           updateChangeLog(agencyFeedRow,UPDATE_ACTION)
 
-        #pdb.set_trace()
-
-        # Temporarily disabling 
-        #revision(agencyFeedRowFourfour,agencyFeedRow)
-
-def Main():
-  #updateCatalog()
-  updateTransitStopDataset()
-  print(CHANGE_LOG)
-
 
 
 def Main():
   updateCatalog()
-  
+  print(CHANGE_LOG)
 
 Main()
 
