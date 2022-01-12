@@ -185,7 +185,7 @@ def revision(fourfour, agencyFeedRow):
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
-      if catalogRow['description'] == None:
+      if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
         #print("existingFeedID No desc")
         #print(existingFeedID)
