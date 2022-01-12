@@ -127,7 +127,13 @@ def updateTransitStopDataset():
         with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
           zip.write(zipRequest.content)
         z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
-
+        try:
+          stopsFile = z.read("stops.txt")
+        except:
+          print("no stops file in " + catalogRow["name"])
+          continue
+        print("hi")
+        pdb.set_trace()
         for filename in z.namelist():
           print(catalogRow["name"] + "has the following files:")
           print(filename)
