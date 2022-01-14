@@ -10,6 +10,8 @@ from datetime import datetime
 import re
 import zipfile
 from zipfile import ZipFile
+import csv
+import pandas
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 # I know it is bad practice to hard code passwords into a file, but since other people are going to
@@ -79,31 +81,61 @@ def getCatalogEntryFeedID(catalogRowDescription):
       feedID = locateResultList[2][:len(locateResultList[2]) -1]
       return feedID
 
+
+def makeStopsObject(bytes):
+  lineList = bytes.decode('UTF-8').split("\n")
+  headers = lineList[0].split(",")
+  stopsObject = {}
+  for header in headers:
+    stopsObject[header] = []
+  i=0
+  while i < len(lineList):
+    j=0
+    stopAsList = lineList[i].split(",")
+    print(stopAsList)
+    if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
+      for header in headers:
+        print("i:")
+        print(i)
+        print("headers[header]:")
+        print(header)
+        stopsObject[header].append(stopAsList[j])
+        j+=1
+    i += 1
+    print(len(lineList))
+  return stopsObject
+
+
 # This funciton takes in a line from the stop.txt file within the GTFS zip file and
 # returns it in the format needed to do a bulk upsert with a variable made of stops made with this function
-def makeStopLine(stop,feedID):
-  stopList = stop.split(",")
-  stopID = stopList[0]
-  stopName = stopList[1]
-  stopLat = stopList[2]
-  stopLon = stopList[3]
-  stopCode = stopList[4]
-  stopZoneID = stopList[5]
+
+# This funciton takes in an integer and the feedID of where the stop file came from and
+# returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
+def makeStopLine(stop,feedID,stopsObject):
+  stopID = stopsObject['stop_id'][stop]
+  stopName = stopsObject['stop_name'][stop]
+  stopLat = stopsObject['stop_lat'][stop]
+  stopLon = stopsObject['stop_lon'][stop]
+  stopCode = stopsObject['stop_code'][stop]
+  stopZoneID = stopsObject['zone_id'][stop]
+  locationType = stopsObject['location_type'][stop]
 
   # The below if statment is to ensure the header line is built properly
   if(stopName == 'stop_name'):
     feedID = 'feed_id'
-    locationType = 'location_type'
     stopLocation = 'stop_location'
   else: 
     # feed_id_stop_id is created outside this else loop because its only the feed_id that needs to be adjusted based on whether or not
     # the entry is the first one
     stopLocation = 'POINT('+stopLon+' '+stopLat+')'
-    locationType = '0' #this one Ill definitely have to check up on
   feed_id_stop_id = feedID + "_" + stopID
   
   stopUpsertLine = feed_id_stop_id + ',' + stopID +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
   return stopUpsertLine
+
+#def parseCSV(file):
+
+
 
 
 # This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
@@ -128,40 +160,33 @@ def updateTransitStopDataset():
           zip.write(zipRequest.content)
         z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
         try:
-          stopsFile = z.read("stops.txt")
+          stopFile = z.read("stops.txt")
+          
         except:
           print("no stops file in " + catalogRow["name"])
           continue
-        print("hi")
+        stopsObject = makeStopsObject(stopFile)
+        existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
+        newStopData = ""
+        count = 0
+        while count < len(stopsObject['stop_id']):
+          newStopLine = makeStopLine(count,existingFeedID,stopsObject)
+          count += 1
+          newStopData = newStopData + newStopLine
+        postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
         pdb.set_trace()
-        for filename in z.namelist():
-          print(catalogRow["name"] + "has the following files:")
-          print(filename)
-          if filename == "stops.txt":
-            stopFile = z.read(filename)
-            print("stopFile")
-            stringStops = stopFile.decode('UTF-8').split("\n")
-            existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
-            newStopData = ""
-            count = 0
-
-            for stop in stringStops:
-              if (stop != ""):
-                newStopLine = makeStopLine(stop,existingFeedID)
-                count += 1
-                newStopData = newStopData + newStopLine
-            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-            os.remove(os.getcwd()+"/tempzip.zip")
-          
-            # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
-            strCount = str(count)
-            if not postCatalogEntryBusStopsRequest.ok:
-              print("Error upserting bus stops")
-              countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-            else:
-              print('There were ' + strCount + ' stops upserted')
-              countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
-            updateBusChangeLog(catalogRow, countMessage)
+        os.remove(os.getcwd()+"/tempzip.zip")
+      
+        # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
+        strCount = str(count)
+        print("script found "+strCount+" stops")
+        if not postCatalogEntryBusStopsRequest.ok:
+          print("Error upserting bus stops")
+          countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+        else:
+          print('There were ' + strCount + ' stops upserted')
+          countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
+        updateBusChangeLog(catalogRow, countMessage)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
