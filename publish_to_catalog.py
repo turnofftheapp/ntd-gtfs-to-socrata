@@ -11,7 +11,7 @@ import re
 import zipfile
 from zipfile import ZipFile
 import csv
-import pandas
+
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
 # I know it is bad practice to hard code passwords into a file, but since other people are going to
@@ -174,6 +174,8 @@ def updateTransitStopDataset():
           count += 1
           newStopData = newStopData + newStopLine
         postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+        decodedResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+        
         pdb.set_trace()
         os.remove(os.getcwd()+"/tempzip.zip")
       
@@ -184,9 +186,8 @@ def updateTransitStopDataset():
           print("Error upserting bus stops")
           countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
         else:
-          print('There were ' + strCount + ' stops upserted')
-          countMessage = 'There were ' + strCount + ' stops upserted from this catalog entry'
-        updateBusChangeLog(catalogRow, countMessage)
+          print(decodedResults)
+          updateBusChangeLog(catalogRow, decodedResults)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
