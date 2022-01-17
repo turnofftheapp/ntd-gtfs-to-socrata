@@ -39,6 +39,7 @@ DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED}
 
 
+
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
 def updateChangeLog(agencyFeedRow, action):
   fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
