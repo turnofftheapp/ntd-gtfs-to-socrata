@@ -33,11 +33,28 @@ BUS_UPSERT_ACTION  = 'bus stop upsert'
 
 
 # The below will be the change log that is emailed out once the script is finished running
+INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
-CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED}
+CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
 
+# This funcitons checks if a gtfs link is reachable
+def url_checker(url,agencyFeedRow):
+  try:
+    get = requests.get(url)
+    if get.status_code == 200 or get.status_code == 201:
+      print(f"{url}: is reachable")
+      return True
+    else:
+      errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
+      print(errorMessage)
+      updateInvalidUrlLog(agencyFeedRow,errorMessage)
+      return False
+      
+  except requests.exceptions.RequestException as e:
+    updateInvalidUrlLog(agencyFeedRow,e)
+    return False
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
@@ -57,9 +74,20 @@ def updateBusChangeLog(catalogRow, countMessage):
   fourfour = catalogRow['id']
   name = catalogRow['name']
   feedID = getCatalogEntryFeedID(catalogRow['description'])
+  feedID_name = feedID +"_"+ name
   dataLinkStart = 'https://data.bts.gov/d/'
   changelogValue = [name,f'{dataLinkStart}{fourfour}',countMessage]
-  BUS_STOPS_UPSERTED[feedID] = changelogValue
+  BUS_STOPS_UPSERTED[feedID_name] = changelogValue
+
+  # This function updates the GTFS INVALID_URL portion of the changelog only
+def updateInvalidUrlLog(agencyFeedRow,errorMessage):
+  fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+  name = agencyFeedRow['ntd_name']
+  feedID = agencyFeedRow['feed_id']
+  feedID_name = feedID +"_"+ name
+  dataLinkStart = 'https://data.bts.gov/d/'
+  changelogValue = [name,f'{dataLinkStart}{fourfour}',errorMessage]
+  INVALID_URLS[feedID_name] = changelogValue
 
 # Parses the GTFS zip file link out of the decodedMetadata
 def getZipUrl(description):
@@ -175,7 +203,7 @@ def updateTransitStopDataset():
           count += 1
           newStopData = newStopData + newStopLine
         postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-        decodedResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+        requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
         pdb.set_trace()
         os.remove(os.getcwd()+"/tempzip.zip")
@@ -185,10 +213,9 @@ def updateTransitStopDataset():
         print("script found "+strCount+" stops")
         if not postCatalogEntryBusStopsRequest.ok:
           print("Error upserting bus stops")
-          countMessage = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-        else:
-          print(decodedResults)
-          updateBusChangeLog(catalogRow, decodedResults)
+          requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+        
+        updateBusChangeLog(catalogRow,requestResults)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -311,26 +338,29 @@ def revision(fourfour, agencyFeedRow):
   ##########################
   ### Step 3: Upload File to source_type
   ##########################
-  resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
-  bytes = resp.content
+  zip = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+  isValid = url_checker(zip,agencyFeedRow) #This reports out on invalid GTFS urls
+  if isValid:
+    resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
+    bytes = resp.content
+    
+    upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+    upload_url = f'{DOMAIN_URL}{upload_uri}'
+    upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
   
-  upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
-  upload_url = f'{DOMAIN_URL}{upload_uri}'
-  upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
- 
-  #########
-  #Step 2a(5): Apply revisionHere you just apply your revision as you would if you were updating data.
-  #########
-  apply_revision_uri = update_revision_response.json()['links']['apply']
-  apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
-  revision_number = update_revision_response.json()['resource']['revision_seq']
-  body = json.dumps({
-  'resource': {
-      'id': revision_number
-    }
-  })
-  apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  return apply_revision_response
+    #########
+    #Step 2a(5): Apply revisionHere you just apply your revision as you would if you were updating data.
+    #########
+    apply_revision_uri = update_revision_response.json()['links']['apply']
+    apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
+    revision_number = update_revision_response.json()['resource']['revision_seq']
+    body = json.dumps({
+    'resource': {
+        'id': revision_number
+      }
+    })
+    apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    return apply_revision_response
 
 
 
