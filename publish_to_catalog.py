@@ -162,8 +162,6 @@ def makeStopLine(stop,feedID,stopsObject):
   stopUpsertLine = feed_id_stop_id + ',' + stopID +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
   return stopUpsertLine
 
-#def parseCSV(file):
-
 
 
 
@@ -205,7 +203,6 @@ def updateTransitStopDataset():
         postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
         requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
-        pdb.set_trace()
         os.remove(os.getcwd()+"/tempzip.zip")
       
         # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
