@@ -175,7 +175,10 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  return apply_revision_response
+  output = {}
+  output['response'] = apply_revision_response
+  output['fourfour'] = fourfour
+  return output
   
 
 
@@ -220,13 +223,13 @@ def updateCatalog():
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
         if agencyFeedRowFourfour == None:
           print("creating")
-          revision(None, agencyFeedRow)
+          output = revision(None, agencyFeedRow)
           newFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-          updateChangeLog(agencyFeedRow,CREATE_ACTION,newFourfour)
+          updateChangeLog(agencyFeedRow,CREATE_ACTION,output['fourfour'])
           
         else:
           print("replacing")
-          revision(agencyFeedRowFourfour, agencyFeedRow)
+          output = revision(agencyFeedRowFourfour, agencyFeedRow)
           updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
 
 
