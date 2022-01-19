@@ -91,13 +91,12 @@ def updateInvalidUrlLog(agencyFeedRow,errorMessage):
 
 # Parses the GTFS zip file link out of the decodedMetadata
 def getZipUrl(description):
-  locateLogic = re.compile('\\nGTFS URL: .*\.zip\\n')
+  locateLogic = re.compile('\\nGTFS URL: .*\\nAgency URL:')
   locateResult = locateLogic.search(description)
   if locateResult == None:
     return None
   else:
-    locateResultList = locateResult.group().split(" ")
-    return locateResultList[2].strip()
+    return locateResult.group().split(" ")[2].split("\n")[0]
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
 def getCatalogEntryFeedID(catalogRowDescription):
@@ -121,17 +120,11 @@ def makeStopsObject(bytes):
   while i < len(lineList):
     j=0
     stopAsList = lineList[i].split(",")
-    print(stopAsList)
     if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
       for header in headers:
-        print("i:")
-        print(i)
-        print("headers[header]:")
-        print(header)
         stopsObject[header].append(stopAsList[j])
         j+=1
     i += 1
-    print(len(lineList))
   return stopsObject
 
 
@@ -177,7 +170,8 @@ def updateTransitStopDataset():
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
-        print("zip = ")
+        print("zip for")
+        print(catalogRow['name'])
         print(catalogEntryZip)
         # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
         # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
@@ -198,8 +192,8 @@ def updateTransitStopDataset():
         count = 0
         while count < len(stopsObject['stop_id']):
           newStopLine = makeStopLine(count,existingFeedID,stopsObject)
-          count += 1
           newStopData = newStopData + newStopLine
+          count += 1
         postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
         requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
@@ -400,11 +394,43 @@ def updateCatalog():
           revision(agencyFeedRowFourfour, agencyFeedRow)
           updateChangeLog(agencyFeedRow,UPDATE_ACTION)
 
+
+# This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
+def resetTransitStopDataset():  
+  with open(os.getcwd()+"/stopsStarter.txt", 'r') as file:
+    stopFile = csv.reader(file)
+    stopslist = [] #list of lists
+    for line in stopFile:
+      stopslist.append(line)
+    headers = stopslist[0]
+    stopsObject = {}
+    for header in headers:
+      stopsObject[header] = []
+    i=0
+    while i < len(stopslist):
+      j=0
+      stopAsList = stopslist[i]
+      if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
+        for header in headers:
+          stopsObject[header].append(stopAsList[j])
+          j+=1
+      i += 1
+    existingFeedID =  '00009'
+    newStopData = ""
+    count = 0
+    
+    while count < len(stopsObject['stop_id']):
+      newStopLine = makeStopLine(count,existingFeedID,stopsObject)
+      count += 1
+      newStopData = newStopData + newStopLine
+    postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+    requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
 
 def Main():
   updateCatalog()
   updateTransitStopDataset()
+  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   print(CHANGE_LOG)
 
 Main()
