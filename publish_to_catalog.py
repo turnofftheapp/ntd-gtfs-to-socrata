@@ -175,7 +175,10 @@ def revision(fourfour, agencyFeedRow):
     }
   })
   apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  return apply_revision_response
+  output = {}
+  output['response'] = apply_revision_response
+  output['fourfour'] = fourfour
+  return output
   
 
 
@@ -185,7 +188,7 @@ def revision(fourfour, agencyFeedRow):
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
-      if catalogRow['description'] == None:
+      if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
         #print("existingFeedID No desc")
         #print(existingFeedID)
@@ -220,13 +223,13 @@ def updateCatalog():
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
         if agencyFeedRowFourfour == None:
           print("creating")
-          revision(None, agencyFeedRow)
+          output = revision(None, agencyFeedRow)
           newFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-          updateChangeLog(agencyFeedRow,CREATE_ACTION,newFourfour)
+          updateChangeLog(agencyFeedRow,CREATE_ACTION,output['fourfour'])
           
         else:
           print("replacing")
-          revision(agencyFeedRowFourfour, agencyFeedRow)
+          output = revision(agencyFeedRowFourfour, agencyFeedRow)
           updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
 
 
