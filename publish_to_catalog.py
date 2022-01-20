@@ -1,4 +1,3 @@
-#from _typeshed import NoneType
 import pdb
 import requests
 import os
@@ -7,11 +6,9 @@ import re
 from operator import itemgetter
 from urllib.request import urlopen
 from datetime import datetime
-import re
 import zipfile
 from zipfile import ZipFile
 import csv
-import json
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
@@ -30,7 +27,6 @@ ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit
 ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
-BUS_UPSERT_ACTION  = 'bus stop upsert'
 
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 
@@ -60,8 +56,7 @@ def urlIsValid(url,agencyFeedRow):
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
-def updateChangeLog(agencyFeedRow, action):
-  fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+def updateChangeLog(agencyFeedRow, action, fourfour):
   name = agencyFeedRow['ntd_name']
   feedID = agencyFeedRow['feed_id']
   dataLinkStart = 'https://data.bts.gov/d/'
@@ -71,16 +66,7 @@ def updateChangeLog(agencyFeedRow, action):
   elif action == UPDATE_ACTION:
     DATA_UPDATED[feedID] = changelogValue
   
-# This function updates the bus stop portion of the changelog only due to the data coming from a catalogRow as opposed to an agencyFeedRow
-def updateBusChangeLog(catalogRow, countMessage):
-  fourfour = catalogRow['id']
-  name = catalogRow['name']
-  feedID = getCatalogEntryFeedID(catalogRow['description'])
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}',countMessage]
-  BUS_STOPS_UPSERTED[feedID] = changelogValue
-
-  # This function updates the GTFS INVALID_URL portion of the changelog only
+# This function updates the GTFS INVALID_URL portion of the changelog only
 def updateInvalidUrlLog(agencyFeedRow,errorMessage):
   fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   name = agencyFeedRow['ntd_name']
@@ -108,7 +94,6 @@ def getCatalogEntryFeedID(catalogRowDescription):
       locateResultList = locateResult.group().split(FEED_ID_PREFIX)
       feedID = locateResultList[1][:len(locateResultList[1]) -1]
       return feedID
-
 
 def makeStopsObject(bytes):
   lineList = bytes.decode('UTF-8').split("\n")
@@ -266,27 +251,6 @@ def setMetadata(agencyFeedRow):
     'tags': ["national transit map"]
   }
 
-# Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
-# in the catalog entries descriptions.
-# Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
-def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
-  for catalogRow in CURRENT_CATALOG:
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
-      if catalogRow['description'] == None:
-        existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
-        #print("existingFeedID No desc")
-        #print(existingFeedID)
-      else:
-        existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
-        #print("existingFeedID desc")
-        #print(existingFeedID)
-      
-      if existingFeedID == incoming_feed_id: 
-        #print("################################# catalogRow['id']: "+catalogRow['id'])
-        return catalogRow['id'] # This is a fourfour
-
-  return None
-
 
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
@@ -354,7 +318,6 @@ def revision(fourfour, agencyFeedRow):
   #@TODO: use the .get response from isValidZip() function for efficiency
   resp = requests.get(url=fetchLinkZipFileUrl)
   bytes = resp.content
-  
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -374,11 +337,31 @@ def revision(fourfour, agencyFeedRow):
   return apply_revision_response
 
 
+# Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
+# in the catalog entries descriptions.
+# Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
+def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
+  for catalogRow in CURRENT_CATALOG:
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+      if catalogRow['description'] == None: #this might be the issue
+        existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
+        #print("existingFeedID No desc")
+        #print(existingFeedID)
+      else:
+        existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
+        #print("existingFeedID desc")
+        #print(existingFeedID)
+      
+      if existingFeedID == incoming_feed_id: 
+        #print("################################# catalogRow['id']: "+catalogRow['id'])
+        return catalogRow['id'] # This is a fourfour
+
 
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def updateCatalog():
+  
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
@@ -387,21 +370,10 @@ def updateCatalog():
   
     if 'original_consent_declined' in agencyFeedRow:
       if agencyFeedRow['original_consent_declined'] == False:
-        
         # The line below calls the function that looks through metadata to determine if dataset exists 
         # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
         # create or replace is made for that row of incoming data
         agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-
-        name = agencyFeedRow['ntd_name']
-        feedID = agencyFeedRow['feed_id']
-        dataLinkStart = 'https://data.bts.gov/d/'
-        
-        # TODO find the fourfour of the newly created sets 
-        # TODO change the condition of the if & elif statements below since we will have a fourfour either way
-        fourfour = agencyFeedRowFourfour 
-
-        changelogValue = [name,f'{dataLinkStart}{fourfour}'] #maybe consider .format
         if agencyFeedRowFourfour == None:
           print("creating")
           # Since the revision is created below before the update to the changelog, the fourfour should exist
