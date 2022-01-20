@@ -30,7 +30,7 @@ UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
 
-
+FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -100,13 +100,13 @@ def getZipUrl(description):
 
 # Locates the FeedID within the description field of catalogRow and returns it. Returns None if not found
 def getCatalogEntryFeedID(catalogRowDescription):
-    locateLogic = re.compile('[\n]Feed ID: [0-9]+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
+    locateLogic = re.compile('[\n]' + FEED_ID_PREFIX + '.+[\n]') # Defines the regex logic to be ran on the description of catalogRow to look for the FeedID
     locateResult = locateLogic.search(catalogRowDescription) # Applys the logic above to the actual description
     if locateResult == None:
       return None
     else:
-      locateResultList = locateResult.group().split(" ")
-      feedID = locateResultList[2][:len(locateResultList[2]) -1]
+      locateResultList = locateResult.group().split(FEED_ID_PREFIX)
+      feedID = locateResultList[1][:len(locateResultList[1]) -1]
       return feedID
 
 
@@ -223,7 +223,7 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
 def setMetadata(agencyFeedRow):
   description = "Agency Name: " + agencyFeedRow['agency_name'] + "\n"
   description += "NTD ID: " + agencyFeedRow['ntd_id'] + "\n"
-  description += "Feed ID: " + agencyFeedRow['feed_id'] + "\n"
+  description += FEED_ID_PREFIX + agencyFeedRow['feed_id'] + "\n"
   description += "GTFS: " + getMetadataFieldIfExists('has_gtfs', agencyFeedRow) + "\n"
   description += "GTFS URL: " + getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow) + "\n"
   description += "Agency URL: " + getMetadataUrlFieldIfExists('agency_website', agencyFeedRow) + "\n"
