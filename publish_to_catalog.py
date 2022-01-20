@@ -1,5 +1,6 @@
 #from _typeshed import NoneType
 import pdb
+from shutil import get_archive_formats
 import requests
 import os
 import json
@@ -29,6 +30,7 @@ ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
+INVALID_URL_ACTION = 'record invalid url'
 
 
 
@@ -39,45 +41,63 @@ DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
 
+# This function takes in either a catalog entry or an agency feed row and returns its "thumbprint" that can be used to update the changelog
+def getThumbPrint(entry):
+  thumbPrint = {}
+  if 'ntd_name' in entry: #Then its an agencyFeedRow
+    thumbPrint['Name'] = entry['ntd_name']
+    thumbPrint['FeedID'] = entry['feed_id']
+    thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(entry['feed_id'])
+  elif 'name' in entry: #Then its a catalogRow
+    thumbPrint['Name'] = entry['name']
+    thumbPrint['FeedID'] = getCatalogEntryFeedID(entry['description'])
+    thumbPrint['Fourfour'] = entry['id']
+  return thumbPrint
+
 # This funcitons checks if a gtfs link is reachable
 def url_checker(url,agencyFeedRow):
   try:
     get = requests.get(url)
-    if get.status_code == 200 or get.status_code == 201:
-      print(f"{url}: is reachable")
-      return True
-    else:
+    if get.status_code == 404:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
-      updateInvalidUrlLog(agencyFeedRow,errorMessage)
-      return False
-      
+      updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, errorMessage)
+    else:
+      print(f"{url}: is reachable")
+      return get_archive_formats
   except requests.exceptions.RequestException as e:
-    updateInvalidUrlLog(agencyFeedRow,e)
-    return False
+    print(e)
+    updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, e)
+  finally:
+    return None
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
-def updateChangeLog(agencyFeedRow, action):
-  fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-  name = agencyFeedRow['ntd_name']
-  feedID = agencyFeedRow['feed_id']
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}']
+def updateChangeLog(entryThumbPrint, action, Message=''):
+  dataLink = 'https://data.bts.gov/d/'+entryThumbPrint['Fourfour']
+  changelogValue = [entryThumbPrint['Name'],dataLink]
+  feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
   if action == CREATE_ACTION:
-    DATA_CREATED[feedID] = changelogValue
+    DATA_CREATED[entryThumbPrint['FeedID']] = changelogValue
   elif action == UPDATE_ACTION:
-    DATA_UPDATED[feedID] = changelogValue
-  
-# This function updates the bus stop portion of the changelog only due to the data coming from a catalogRow as opposed to an agencyFeedRow
-def updateBusChangeLog(catalogRow, countMessage):
-  fourfour = catalogRow['id']
-  name = catalogRow['name']
-  feedID = getCatalogEntryFeedID(catalogRow['description'])
-  feedID_name = feedID +"_"+ name
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}',countMessage]
+    DATA_UPDATED[entryThumbPrint['FeedID']] = changelogValue
+  elif action == BUS_UPSERT_ACTION:
+    changelogValue = [entryThumbPrint['Name'],dataLink,Message]
+    BUS_STOPS_UPSERTED[feedID_name] = changelogValue
+  elif action == INVALID_URL_ACTION:
+    changelogValue = [entryThumbPrint['Name'],dataLink,Message]
+    INVALID_URLS[feedID_name] = changelogValue
+
+
+'''
+# This function updates the bus stop portion of the changelog only
+
+def updateBusChangeLog(entryThumbPrint, countMessage):
+  feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
+  dataLink= 'https://data.bts.gov/d/'+ entryThumbPrint['Fourfour']
+  changelogValue = [entryThumbPrint['name'],dataLink,countMessage]
   BUS_STOPS_UPSERTED[feedID_name] = changelogValue
+  
 
   # This function updates the GTFS INVALID_URL portion of the changelog only
 def updateInvalidUrlLog(agencyFeedRow,errorMessage):
@@ -88,6 +108,7 @@ def updateInvalidUrlLog(agencyFeedRow,errorMessage):
   dataLinkStart = 'https://data.bts.gov/d/'
   changelogValue = [name,f'{dataLinkStart}{fourfour}',errorMessage]
   INVALID_URLS[feedID_name] = changelogValue
+'''
 
 # Parses the GTFS zip file link out of the decodedMetadata
 def getZipUrl(description):
@@ -126,10 +147,6 @@ def makeStopsObject(bytes):
         j+=1
     i += 1
   return stopsObject
-
-
-# This funciton takes in a line from the stop.txt file within the GTFS zip file and
-# returns it in the format needed to do a bulk upsert with a variable made of stops made with this function
 
 # This funciton takes in an integer and the feedID of where the stop file came from and
 # returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
@@ -170,6 +187,8 @@ def updateTransitStopDataset():
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
+        print("catalogRow")
+        pdb.set_trace()
         print("zip for")
         print(catalogRow['name'])
         print(catalogEntryZip)
@@ -182,9 +201,9 @@ def updateTransitStopDataset():
         z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
         try:
           stopFile = z.read("stops.txt")
-          
         except:
-          print("no stops file in " + catalogRow["name"])
+          message = "No stops file within zip."
+          updateChangeLog(getThumbPrint(catalogRow), INVALID_URL_ACTION, message)
           continue
         stopsObject = makeStopsObject(stopFile)
         existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
@@ -197,7 +216,7 @@ def updateTransitStopDataset():
         postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
         requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
-        os.remove(os.getcwd()+"/tempzip.zip")
+        #os.remove(os.getcwd()+"/tempzip.zip")
       
         # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
         strCount = str(count)
@@ -206,7 +225,7 @@ def updateTransitStopDataset():
           print("Error upserting bus stops")
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
         
-        updateBusChangeLog(catalogRow,requestResults)
+        updateChangeLog(getThumbPrint(catalogRow), BUS_UPSERT_ACTION, requestResults)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -330,11 +349,9 @@ def revision(fourfour, agencyFeedRow):
   ### Step 3: Upload File to source_type
   ##########################
   zip = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
-  isValid = url_checker(zip,agencyFeedRow) #This reports out on invalid GTFS urls
-  if isValid:
-    resp = requests.get(url=getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow))
+  resp = url_checker(zip,agencyFeedRow) #This checks the url to see if it is valid, does the necessary reporting to the changelog and returns the completed request
+  if resp != None:
     bytes = resp.content
-    
     upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
     upload_url = f'{DOMAIN_URL}{upload_uri}'
     upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -351,7 +368,7 @@ def revision(fourfour, agencyFeedRow):
       }
     })
     apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-    return apply_revision_response
+    #return apply_revision_response
 
 
 
@@ -387,12 +404,12 @@ def updateCatalog():
           # Since the revision is created below before the update to the changelog, the fourfour should exist
           # by the time the change log entry is entered for that new data
           revision(None, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,CREATE_ACTION)
+          updateChangeLog(getThumbPrint(agencyFeedRow),CREATE_ACTION)
           
         else:
           print("replacing") 
           revision(agencyFeedRowFourfour, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,UPDATE_ACTION)
+          updateChangeLog(getThumbPrint(agencyFeedRow),UPDATE_ACTION)
 
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
