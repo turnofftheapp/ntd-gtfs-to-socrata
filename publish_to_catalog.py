@@ -11,6 +11,7 @@ import re
 import zipfile
 from zipfile import ZipFile
 import csv
+import json
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
@@ -431,7 +432,9 @@ def Main():
   updateCatalog()
   updateTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
-  print(CHANGE_LOG)
+  
+  with open('CHANGE_LOG.txt', 'w') as f:
+    f.write(json.dumps(CHANGE_LOG, indent=4))
 
 Main()
 
