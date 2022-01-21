@@ -235,6 +235,7 @@ def setMetadata(agencyFeedRow):
   
   # @TODO: set all required metadata
   return { 
+    'name': "NTM: " + agencyFeedRow['agency_name'],
     'description': description,
     "metadata" : {
       "custom_fields" : {
