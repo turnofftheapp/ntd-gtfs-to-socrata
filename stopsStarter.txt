@@ -1,0 +1,2 @@
+stop_lat,wheelchair_boarding,stop_code,stop_lon,stop_timezone,stop_url,parent_station,stop_desc,stop_name,location_type,stop_id,zone_id
+47.654945,0,2880,-117.293701,,,,E APPLEWAY BL & S VISTA RD,Appleway @ Vista,0,APPVISEF,
