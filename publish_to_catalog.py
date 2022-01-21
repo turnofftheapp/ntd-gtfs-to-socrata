@@ -57,7 +57,7 @@ def urlIsValid(url,agencyFeedRow):
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
 def updateChangeLog(agencyFeedRow, action, fourfour):
-  name = agencyFeedRow['ntd_name']
+  name = agencyFeedRow['agency_name']
   feedID = agencyFeedRow['feed_id']
   dataLinkStart = 'https://data.bts.gov/d/'
   changelogValue = [name,f'{dataLinkStart}{fourfour}']
@@ -69,7 +69,7 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
 # This function updates the GTFS INVALID_URL portion of the changelog only
 def updateInvalidUrlLog(agencyFeedRow,errorMessage):
   fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-  name = agencyFeedRow['ntd_name']
+  name = agencyFeedRow['agency_name']
   feedID = agencyFeedRow['feed_id']
   dataLinkStart = 'https://data.bts.gov/d/'
   changelogValue = [name,f'{dataLinkStart}{fourfour}',errorMessage]
@@ -223,6 +223,7 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
 
 def setMetadata(agencyFeedRow):
   description = "Agency Name: " + agencyFeedRow['agency_name'] + "\n"
+  description += "NTD Name: " + getMetadataFieldIfExists('ntd_name', agencyFeedRow) + "\n"
   description += "NTD ID: " + agencyFeedRow['ntd_id'] + "\n"
   description += FEED_ID_PREFIX + agencyFeedRow['feed_id'] + "\n"
   description += "GTFS: " + getMetadataFieldIfExists('has_gtfs', agencyFeedRow) + "\n"
@@ -234,7 +235,6 @@ def setMetadata(agencyFeedRow):
   
   # @TODO: set all required metadata
   return { 
-    'name': "NTM: " + agencyFeedRow['ntd_name'],
     'description': description,
     "metadata" : {
       "custom_fields" : {
