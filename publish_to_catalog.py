@@ -191,7 +191,8 @@ def updateTransitStopDataset():
           print("Error upserting bus stops")
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
         
-        updateBusChangeLog(catalogRow,requestResults)
+        # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
+        #Funciton was replaced: updateBusChangeLog(catalogRow,requestResults)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
