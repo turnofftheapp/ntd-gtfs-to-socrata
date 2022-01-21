@@ -27,7 +27,8 @@ ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit
 ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
-
+BUS_UPSERT_ACTION  = 'bus stop upsert'
+INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 
 # The below will be the change log that is emailed out once the script is finished running
@@ -36,6 +37,19 @@ BUS_STOPS_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
+
+# This function takes in either a catalog entry or an agency feed row and returns its "thumbprint" that can be used to update the changelog
+def getThumbPrint(entry):
+  thumbPrint = {}
+  if 'ntd_name' in entry: #Then its an agencyFeedRow
+    thumbPrint['Name'] = entry['ntd_name']
+    thumbPrint['FeedID'] = entry['feed_id']
+    thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(entry['feed_id'])
+  elif 'name' in entry: #Then its a catalogRow
+    thumbPrint['Name'] = entry['name']
+    thumbPrint['FeedID'] = getCatalogEntryFeedID(entry['description'])
+    thumbPrint['Fourfour'] = entry['id']
+  return thumbPrint
 
 # This funcitons checks if a gtfs link is reachable
 def urlIsValid(url,agencyFeedRow):
@@ -47,14 +61,16 @@ def urlIsValid(url,agencyFeedRow):
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
-      updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
+      #updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
+      updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
       return None
       
   except Exception as e:
-    updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
+    #updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
+    updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
     return None
 
-
+'''
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
 def updateChangeLog(agencyFeedRow, action, fourfour):
   name = agencyFeedRow['agency_name']
@@ -65,7 +81,33 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
     DATA_CREATED[feedID] = changelogValue
   elif action == UPDATE_ACTION:
     DATA_UPDATED[feedID] = changelogValue
-  
+  '''
+
+def updateChangeLog(entryThumbPrint, action, Message='',url=''):
+  if entryThumbPrint['Fourfour'] == None:
+    dataLink = "No data link because there is no fourfour"
+  else:
+    dataLink = 'https://data.bts.gov/d/' + entryThumbPrint['Fourfour']
+  changelogValue = [entryThumbPrint['Name'],dataLink]
+  if action == CREATE_ACTION:
+    DATA_CREATED[entryThumbPrint['FeedID']] = changelogValue
+  elif action == UPDATE_ACTION:
+    DATA_UPDATED[entryThumbPrint['FeedID']] = changelogValue
+  elif action == BUS_UPSERT_ACTION:
+    feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
+    changelogValue = [entryThumbPrint['Name'],dataLink,Message]
+    BUS_STOPS_UPSERTED[feedID_name] = changelogValue
+  elif action == INVALID_URL_ACTION:
+    changelogValue = [
+      entryThumbPrint['Name'],
+      dataLink,
+      "URL: " + url,
+      Message
+    ]
+    INVALID_URLS[entryThumbPrint['FeedID']] = changelogValue
+
+
+'''
 # This function updates the GTFS INVALID_URL portion of the changelog only
 def updateInvalidUrlLog(agencyFeedRow,url,errorMessage):
   fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
@@ -79,7 +121,7 @@ def updateInvalidUrlLog(agencyFeedRow,url,errorMessage):
     errorMessage
   ]
   INVALID_URLS[feedID] = changelogValue
-
+'''
 # Parses the GTFS zip file link out of the decodedMetadata
 def getZipUrl(description):
   locateLogic = re.compile('\\nGTFS URL: .*\\nAgency URL:')
@@ -157,7 +199,6 @@ def updateTransitStopDataset():
   # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
   # and add that data to the catalog bus stop data
   for catalogRow in CURRENT_CATALOG: 
-    print(catalogRow['name'])
     if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
      
     #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
@@ -175,11 +216,12 @@ def updateTransitStopDataset():
         z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
         print(catalogRow['name'])
         print("now remove the stops.txt file before continuing if the above agency is from Pierce Transit")
-        pdb.set_trace()
         try:
           stopFile = z.read("stops.txt")
         except Exception as e:
-          updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
+          #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
+          updateChangeLog(getThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
+          
           print("no stops file in " + catalogRow["name"])
           os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
@@ -214,7 +256,8 @@ def getMetadataFieldIfExists(fieldName, agencyFeedRow):
 
 def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
   if fieldName not in agencyFeedRow:
-    updateInvalidUrlLog(agencyFeedRow, "N/A", fieldName + ": Field does not exist")
+    #updateInvalidUrlLog(agencyFeedRow, "N/A", fieldName + ": Field does not exist")
+    updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
     return ""
 
   # Validate URL (from https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45)
@@ -360,7 +403,8 @@ def revision(fourfour, agencyFeedRow):
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
         #print("existingFeedID No desc")
@@ -373,6 +417,8 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
       if existingFeedID == incoming_feed_id: 
         #print("################################# catalogRow['id']: "+catalogRow['id'])
         return catalogRow['id'] # This is a fourfour
+      else:
+        return None
 
 
 # This is the highest level function that takes in the data, iterates through it, 
@@ -398,13 +444,15 @@ def updateCatalog():
           # by the time the change log entry is entered for that new data
           revision_response = revision(None, agencyFeedRow)
           if revision_response != None:
-            updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
+            #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
+            updateChangeLog(getThumbPrint(agencyFeedRow), CREATE_ACTION)
           
         else:
           print("replacing") 
           revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
           if revision_response != None:
-            updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
+            #updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
+            updateChangeLog(getThumbPrint(agencyFeedRow), UPDATE_ACTION)
 
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
