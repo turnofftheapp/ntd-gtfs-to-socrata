@@ -379,12 +379,12 @@ def updateCatalog():
           # Since the revision is created below before the update to the changelog, the fourfour should exist
           # by the time the change log entry is entered for that new data
           revision_response = revision(None, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,CREATE_ACTION)
+          updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
           
         else:
           print("replacing") 
           revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,UPDATE_ACTION)
+          updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
 
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
