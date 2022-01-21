@@ -47,11 +47,11 @@ def urlIsValid(url,agencyFeedRow):
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
-      updateInvalidUrlLog(agencyFeedRow,errorMessage)
+      updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
       return False
       
-  except requests.exceptions.RequestException as e:
-    updateInvalidUrlLog(agencyFeedRow,e)
+  except Exception as e:
+    updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
     return False
 
 
@@ -67,12 +67,17 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
     DATA_UPDATED[feedID] = changelogValue
   
 # This function updates the GTFS INVALID_URL portion of the changelog only
-def updateInvalidUrlLog(agencyFeedRow,errorMessage):
+def updateInvalidUrlLog(agencyFeedRow,url,errorMessage):
   fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   name = agencyFeedRow['agency_name']
   feedID = agencyFeedRow['feed_id']
   dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}',errorMessage]
+  changelogValue = [
+    name,
+    f'{dataLinkStart}{fourfour}',
+    "URL: " + url,
+    errorMessage
+  ]
   INVALID_URLS[feedID] = changelogValue
 
 # Parses the GTFS zip file link out of the decodedMetadata
@@ -202,7 +207,7 @@ def getMetadataFieldIfExists(fieldName, agencyFeedRow):
 
 def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
   if fieldName not in agencyFeedRow:
-    updateInvalidUrlLog(agencyFeedRow, fieldName + ": Field does not exist")
+    updateInvalidUrlLog(agencyFeedRow, "N/A", fieldName + ": Field does not exist")
     return ""
 
   # Validate URL (from https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45)
@@ -215,7 +220,7 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
   #    r'(?:/?|[/?]\S+)$', re.IGNORECASE)#
 
   #  if (re.match(urlRegex, agencyFeedRow[fieldName]) is None):
-  #    updateInvalidUrlLog(agencyFeedRow, fieldName + ": URL is invalid.")
+  #    updateInvalidUrlLog(agencyFeedRow, agencyFeedRow[fieldName], "URL is invalid.")
   #    return ""
 
   return agencyFeedRow[fieldName]
