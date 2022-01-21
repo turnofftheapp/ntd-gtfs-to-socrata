@@ -43,16 +43,16 @@ def urlIsValid(url,agencyFeedRow):
     get = requests.get(url)
     if get.status_code == 200 or get.status_code == 201:
       print(f"{url}: is reachable")
-      return True
+      return get
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
       updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
-      return False
+      return None
       
   except Exception as e:
     updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
-    return False
+    return None
 
 
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
@@ -157,7 +157,10 @@ def updateTransitStopDataset():
   # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
   # and add that data to the catalog bus stop data
   for catalogRow in CURRENT_CATALOG: 
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    print(catalogRow['name'])
+    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+     
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print("zip for")
@@ -170,11 +173,15 @@ def updateTransitStopDataset():
         with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
           zip.write(zipRequest.content)
         z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
+        print(catalogRow['name'])
+        print("now remove the stops.txt file before continuing if the above agency is from Pierce Transit")
+        pdb.set_trace()
         try:
           stopFile = z.read("stops.txt")
-          
-        except:
+        except Exception as e:
+          updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
           print("no stops file in " + catalogRow["name"])
+          os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
         stopsObject = makeStopsObject(stopFile)
         existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
@@ -262,12 +269,14 @@ def setMetadata(agencyFeedRow):
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
+  print(agencyFeedRow['agency_name'])
   fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
-  
+  urlResponseIfValid = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
   # Skip uploading to catalog if ZIP file is not valid
-  if not urlIsValid(fetchLinkZipFileUrl, agencyFeedRow): # This reports out on invalid GTFS urls
+  if urlResponseIfValid == None: # This reports out on invalid GTFS urls
     return None
-
+  else:
+    return None
   print("revision was called")
   print(fourfour)
   ########
@@ -323,8 +332,10 @@ def revision(fourfour, agencyFeedRow):
   ##########################
 
   #@TODO: use the .get response from isValidZip() function for efficiency
-  resp = requests.get(url=fetchLinkZipFileUrl)
-  bytes = resp.content
+  #resp = requests.get(url=fetchLinkZipFileUrl)
+  #bytes = resp.content
+  # The above lines were used when calling a get request on the url twice for validation and use, but I changed it to call only once for both those things
+  bytes = urlResponseIfValid.content
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
   upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -386,12 +397,14 @@ def updateCatalog():
           # Since the revision is created below before the update to the changelog, the fourfour should exist
           # by the time the change log entry is entered for that new data
           revision_response = revision(None, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
+          if revision_response != None:
+            updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
           
         else:
           print("replacing") 
           revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
-          updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
+          if revision_response != None:
+            updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
 
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
