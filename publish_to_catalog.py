@@ -87,7 +87,7 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
     DATA_UPDATED[feedID] = changelogValue
   '''
 
-def updateChangeLog(entryThumbPrint, action, Message='',url=''):
+def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
   if entryThumbPrint['Fourfour'] == None:
     dataLink = "No data link"
   else:
@@ -99,7 +99,7 @@ def updateChangeLog(entryThumbPrint, action, Message='',url=''):
     DATA_UPDATED[entryThumbPrint['FeedID']] = changelogValue
   elif action == BUS_UPSERT_ACTION:
     feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
-    changelogValue = [entryThumbPrint['Name'],dataLink,Message]
+    changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
     BUS_STOPS_UPSERTED[feedID_name] = changelogValue
   elif action == INVALID_URL_ACTION:
     changelogValue = [
@@ -146,16 +146,33 @@ def getCatalogEntryFeedID(catalogRowDescription):
       feedID = locateResultList[1][:len(locateResultList[1]) -1]
       return feedID
 
+# This function takes in a list and returns the same list with all items in it being cleared of leading and trailing whitespaces
+def clearWhiteSpaces(listWithWhiteSpaceCharactersMaybe,header=False):
+  #if header:
+    #pdb.set_trace()
+  newList = []
+  for item in listWithWhiteSpaceCharactersMaybe:
+    #list1=[]
+    #list1[:0]=item
+    #for thing in list1:
+        #if thing.isspace() and thing != " " and header:
+            #pdb.set_trace()
+    newitemWithoutQuotes = item.strip('"')
+    newItem = newitemWithoutQuotes.strip()
+    newList.append(newItem)
+  return newList
+
 def makeStopsObject(bytes):
-  lineList = bytes.decode('UTF-8').split("\n")
-  headers = lineList[0].split(",")
+  lineList = bytes.decode('UTF-8-sig').split("\n")
+  headers = clearWhiteSpaces(lineList[0].split(","),True)
+  #pdb.set_trace()
   stopsObject = {}
   for header in headers:
     stopsObject[header] = []
   i=0
   while i < len(lineList):
     j=0
-    stopAsList = lineList[i].split(",")
+    stopAsList = clearWhiteSpaces(lineList[i].split(","))
     if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
       for header in headers:
         stopsObject[header].append(stopAsList[j])
@@ -170,24 +187,27 @@ def makeStopsObject(bytes):
 # This funciton takes in an integer and the feedID of where the stop file came from and
 # returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
 def makeStopLine(stop,feedID,stopsObject):
-  try:
-    stopID = stopsObject['stop_id'][stop]
-  except Exception as e:
-    print(176)
-    print(e)
-    stopID = ''
   stopName = stopsObject['stop_name'][stop]
   stopLat = stopsObject['stop_lat'][stop]
   stopLon = stopsObject['stop_lon'][stop]
-  stopCode = stopsObject['stop_code'][stop]
+  try:
+    locationType = stopsObject['location_type'][stop]
+  except Exception as e:
+    locationType = 'omit'
+  try:
+    stopID = stopsObject['stop_id'][stop]
+  except Exception as e:
+    stopID = 'omit'
+  try:
+    stopCode = stopsObject['stop_code'][stop]
+  except Exception as e:
+    stopCode = 'omit'
   try:
     stopZoneID = stopsObject['zone_id'][stop]
   except Exception as e:
-    print(187)
-    print(e)
-    stopZoneID = ''
-  locationType = stopsObject['location_type'][stop]
-
+    stopZoneID = 'omit'
+  
+  
   # The below if statment is to ensure the header line is built properly
   if(stopName == 'stop_name'):
     feedID = 'feed_id'
@@ -198,8 +218,22 @@ def makeStopLine(stop,feedID,stopsObject):
     stopLocation = 'POINT('+stopLon+' '+stopLat+')'
   feed_id_stop_id = feedID + "_" + stopID
   
-  stopUpsertLine = feed_id_stop_id + ',' + stopID +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
-  return stopUpsertLine
+  stopDict = {}
+  stopDict['line'] = ''
+  possibleFields = [feed_id_stop_id,stopCode,stopName,stopID,stopLat,stopLon,stopZoneID,locationType,stopLocation]
+  for field in possibleFields:
+    if field != 'omit':
+      stopDict['line'] = stopDict['line'] + field + ","
+  stopDict['line'] = stopDict['line'][:-1] + "\n" #removes the comma most recently added before putting the newline character
+
+  
+  #stopDict['line'] = feed_id_stop_id +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
+  if stopLon == '' or stopLat == '':
+    stopDict['ToInValidRecord'] = True
+  else:
+    stopDict['ToInValidRecord'] = False
+
+  return stopDict
 
 
 
@@ -212,59 +246,90 @@ def updateTransitStopDataset():
   print("upserting stops was called")
   # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
   # and add that data to the catalog bus stop data
+  
+  '''
+  notThere = True
+  counter = 0
+  '''
   for catalogRow in CURRENT_CATALOG: 
+    '''
+    counter+=1
+    print(counter)
+    if catalogRow['name'] == 'NTM: Tri-County Metropolitan Transportation District of Oregon':
+      notThere = False
+    if notThere:
+      continue
+'''
+    #if catalogRow['name'] == 'NTM: MTA Long Island Rail Road':
     #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-     
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
-        print("zip for")
         print(catalogRow['name'])
-        print(catalogEntryZip)
         # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
         # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
-        zipRequest = requests.get(catalogEntryZip)
-        
-        with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
-          zip.write(zipRequest.content)
-        z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
-        print(catalogRow['name'])
-        print("now remove the stops.txt file before continuing if the above agency is from Pierce Transit")
         try:
+          zipRequest = requests.get(catalogEntryZip)
+          with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
+            zip.write(zipRequest.content)
+          z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
           stopFile = z.read("stops.txt")
         except Exception as e:
           #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
           updateChangeLog(getThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
-          
-          print("no stops file in " + catalogRow["name"])
-          os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
+          print(getattr(e, 'message', repr(e)))
+          #os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
+
         stopsObject = makeStopsObject(stopFile)
         existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
         newStopData = ""
-        count = 0
-        while count < len(stopsObject['stop_lat']):
-          newStopLine = makeStopLine(count,existingFeedID,stopsObject)
-          newStopData = newStopData + newStopLine
-          count += 1
+        lineCount = 0 # This includes the header!
+        validLineCount = 0 # This includes the header!
+        invalidLines = "" 
+        while lineCount < len(stopsObject['stop_lat']):
+          newStopLine = makeStopLine(lineCount,existingFeedID,stopsObject)
+          lineCount += 1
+
+          if lineCount == 1: # Adding header to the invalid lines data
+            invalidLines = invalidLines + newStopLine['line']
+
+          if newStopLine['ToInValidRecord'] == False: #if it is a valid line
+            newStopData = newStopData + newStopLine['line']
+            validLineCount += 1 
+          else:
+            invalidLines = invalidLines + newStopLine['line']
+
         try:
           postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         except Exception as e:
-          pdb.set_trace()
-          print(e)
+          try:
+            print("trying to encode newStopData")
+            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+            requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+          except Exception as e:
+            pdb.set_trace()
+            print(e)
         
         os.remove(os.getcwd()+"/tempzip.zip")
-      
+        busLineDict = {}
+        busLineDict['total'] = lineCount - 1 # Minus 1 to account for the header
+        busLineDict['valid'] = validLineCount -1 # Minus 1 to account for the header
+        busLineDict['invalid'] = lineCount - validLineCount
         # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
-        strCount = str(count)
-        print("script found "+strCount+" stops")
+        strLineCount = str(lineCount)
+        strValidLineCount = str(validLineCount)
+
+        print("script found "+strLineCount+" lines which included " + strValidLineCount + " valid lines.")
         if not postCatalogEntryBusStopsRequest.ok:
           print("Error upserting bus stops")
+          pdb.set_trace()
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-        
+        else:
+          print("________________________________OKAY!___________________________")
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
-        #Funciton was replaced: updateBusChangeLog(catalogRow,requestResults)
+        updateChangeLog(getThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
