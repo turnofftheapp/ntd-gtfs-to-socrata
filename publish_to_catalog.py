@@ -53,21 +53,25 @@ def getThumbPrint(entry):
 
 # This funcitons checks if a gtfs link is reachable
 def urlIsValid(url,agencyFeedRow):
+  print("trying " + getThumbPrint(agencyFeedRow)['Name'])
   try:
     get = requests.get(url)
     if get.status_code == 200 or get.status_code == 201:
       print(f"{url}: is reachable")
+      print("success " + getThumbPrint(agencyFeedRow)['Name'])
       return get
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
       #updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
       updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
+      print("Else on " + getThumbPrint(agencyFeedRow)['Name'])
       return None
       
   except Exception as e:
     #updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
     updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
+    print("Exception on  " + getThumbPrint(agencyFeedRow)['Name'])
     return None
 
 '''
@@ -85,7 +89,7 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
 
 def updateChangeLog(entryThumbPrint, action, Message='',url=''):
   if entryThumbPrint['Fourfour'] == None:
-    dataLink = "No data link because there is no fourfour"
+    dataLink = "No data link"
   else:
     dataLink = 'https://data.bts.gov/d/' + entryThumbPrint['Fourfour']
   changelogValue = [entryThumbPrint['Name'],dataLink]
@@ -166,12 +170,22 @@ def makeStopsObject(bytes):
 # This funciton takes in an integer and the feedID of where the stop file came from and
 # returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
 def makeStopLine(stop,feedID,stopsObject):
-  stopID = stopsObject['stop_id'][stop]
+  try:
+    stopID = stopsObject['stop_id'][stop]
+  except Exception as e:
+    print(176)
+    print(e)
+    stopID = ''
   stopName = stopsObject['stop_name'][stop]
   stopLat = stopsObject['stop_lat'][stop]
   stopLon = stopsObject['stop_lon'][stop]
   stopCode = stopsObject['stop_code'][stop]
-  stopZoneID = stopsObject['zone_id'][stop]
+  try:
+    stopZoneID = stopsObject['zone_id'][stop]
+  except Exception as e:
+    print(187)
+    print(e)
+    stopZoneID = ''
   locationType = stopsObject['location_type'][stop]
 
   # The below if statment is to ensure the header line is built properly
@@ -199,9 +213,9 @@ def updateTransitStopDataset():
   # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
   # and add that data to the catalog bus stop data
   for catalogRow in CURRENT_CATALOG: 
-    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
      
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print("zip for")
@@ -229,12 +243,16 @@ def updateTransitStopDataset():
         existingFeedID = getCatalogEntryFeedID(catalogRow['description'])
         newStopData = ""
         count = 0
-        while count < len(stopsObject['stop_id']):
+        while count < len(stopsObject['stop_lat']):
           newStopLine = makeStopLine(count,existingFeedID,stopsObject)
           newStopData = newStopData + newStopLine
           count += 1
-        postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-        requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+        try:
+          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+          requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+        except Exception as e:
+          pdb.set_trace()
+          print(e)
         
         os.remove(os.getcwd()+"/tempzip.zip")
       
@@ -312,16 +330,16 @@ def setMetadata(agencyFeedRow):
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
+  print("revision was called")
+  print(fourfour)
   print(agencyFeedRow['agency_name'])
   fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
   urlResponseIfValid = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
   # Skip uploading to catalog if ZIP file is not valid
   if urlResponseIfValid == None: # This reports out on invalid GTFS urls
     return None
-  else:
-    return None
-  print("revision was called")
-  print(fourfour)
+  
+  
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
   ########
@@ -403,8 +421,8 @@ def revision(fourfour, agencyFeedRow):
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
         #print("existingFeedID No desc")
