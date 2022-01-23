@@ -181,15 +181,45 @@ def makeStopsObject(bytes):
   return stopsObject
 
 
-# This funciton takes in a line from the stop.txt file within the GTFS zip file and
-# returns it in the format needed to do a bulk upsert with a variable made of stops made with this function
 
-# This funciton takes in an integer and the feedID of where the stop file came from and
+# This function just gets rid of leading and trailing white spaces and quotes from a possible lat or lon
+def stripNum(value):
+  newValue = value.strip()
+  allDoubleQuotesValue = newValue.replace("'",'"') #Now all quotes in value are double quotes
+  return allDoubleQuotesValue.strip('"')
+
+# This function validates that a latitude or lingitude are acutally latitudes and longitudes.
+def validateCoordinates(lat,lon):
+  try:
+    numLat = float(lat)
+    numLon = float(lon)
+  except Exception as e:
+    print(e)
+    return False
+  if numLat >= -90 and numLat <=90 and numLon >= -180 and numLon <= 180:
+    return True
+  else:
+    print("lat or lon were out of range")
+    return False
+  
+# This function validates that the locationType is actually a number instead of a string that cant be turned into a number
+def validateLocationType(locationType):
+  if locationType == 'omit':
+    return True
+  try:
+    numLocation = float(locationType)
+  except Exception as e:
+    print(e)
+    return False
+  return True
+
+
+# This funciton takes in an integer and the feedID of where the stop file came from and the stopsObject and
 # returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
 def makeStopLine(stop,feedID,stopsObject):
   stopName = stopsObject['stop_name'][stop]
-  stopLat = stopsObject['stop_lat'][stop]
-  stopLon = stopsObject['stop_lon'][stop]
+  stopLat = stripNum(stopsObject['stop_lat'][stop])
+  stopLon = stripNum(stopsObject['stop_lon'][stop])
   try:
     locationType = stopsObject['location_type'][stop]
   except Exception as e:
@@ -228,8 +258,15 @@ def makeStopLine(stop,feedID,stopsObject):
 
   
   #stopDict['line'] = feed_id_stop_id +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
-  if stopLon == '' or stopLat == '':
-    stopDict['ToInValidRecord'] = True
+  
+  # TODO make the below check more rigorous. Alot of upsertions are failing because some lat and longs are random english that was probably meant to be in some other field
+  if stop != 0: # If stop==0, then it is the header row and wont need to go through these checks
+    if not validateCoordinates(stopLat,stopLon):
+      stopDict['ToInValidRecord'] = True
+    elif not validateLocationType(locationType):
+      stopDict['ToInValidRecord'] = True
+    else:
+      stopDict['ToInValidRecord'] = False
   else:
     stopDict['ToInValidRecord'] = False
 
@@ -255,14 +292,14 @@ def updateTransitStopDataset():
     '''
     counter+=1
     print(counter)
-    if catalogRow['name'] == 'NTM: Tri-County Metropolitan Transportation District of Oregon':
+    if catalogRow['name'] == 'NTM: Massachusetts Bay Transportation Authority':
       notThere = False
     if notThere:
       continue
-'''
-    #if catalogRow['name'] == 'NTM: MTA Long Island Rail Road':
+    '''
+    if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
     #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
@@ -299,6 +336,7 @@ def updateTransitStopDataset():
             validLineCount += 1 
           else:
             invalidLines = invalidLines + newStopLine['line']
+          
 
         try:
           postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -314,9 +352,9 @@ def updateTransitStopDataset():
         
         os.remove(os.getcwd()+"/tempzip.zip")
         busLineDict = {}
-        busLineDict['total'] = lineCount - 1 # Minus 1 to account for the header
-        busLineDict['valid'] = validLineCount -1 # Minus 1 to account for the header
-        busLineDict['invalid'] = lineCount - validLineCount
+        busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
+        busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
+        busLineDict['invalid lines'] = lineCount - validLineCount
         # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
         strLineCount = str(lineCount)
         strValidLineCount = str(validLineCount)
@@ -571,7 +609,7 @@ def resetTransitStopDataset():
         
 
 def Main():
-  updateCatalog()
+  #updateCatalog()
   updateTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   
