@@ -598,20 +598,30 @@ def resetTransitStopDataset():
       i += 1
     existingFeedID =  '00009'
     newStopData = ""
-    count = 0
-    
-    while count < len(stopsObject['stop_id']):
-      newStopLine = makeStopLine(count,existingFeedID,stopsObject)
-      count += 1
-      newStopData = newStopData + newStopLine
+    lineCount = 0 # This includes the header!
+    validLineCount = 0 # This includes the header!
+    invalidLines = "" 
+    while lineCount < len(stopsObject['stop_lat']):
+      newStopLine = makeStopLine(lineCount,existingFeedID,stopsObject)
+      lineCount += 1
+
+      if lineCount == 1: # Adding header to the invalid lines data
+        invalidLines = invalidLines + newStopLine['line']
+
+      if newStopLine['ToInValidRecord'] == False: #if it is a valid line
+        newStopData = newStopData + newStopLine['line']
+        validLineCount += 1 
+      else:
+        invalidLines = invalidLines + newStopLine['line']
+          
     postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
     requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
 
 def Main():
   #updateCatalog()
-  updateTransitStopDataset()
-  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
+  #updateTransitStopDataset()
+  resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
