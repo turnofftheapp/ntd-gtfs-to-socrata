@@ -49,6 +49,9 @@ def getThumbPrint(entry):
     thumbPrint['Name'] = entry['name']
     thumbPrint['FeedID'] = getCatalogEntryFeedID(entry['description'])
     thumbPrint['Fourfour'] = entry['id']
+
+  #if thumbPrint['Name'] == 'TEST: City of Yakima, dba: Yakima Transit':
+    #pdb.set_trace()
   return thumbPrint
 
 # This funcitons checks if a gtfs link is reachable
@@ -70,6 +73,7 @@ def urlIsValid(url,agencyFeedRow):
       
   except Exception as e:
     #updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
+    print("with agencyFeedRow")
     updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
     print("Exception on  " + getThumbPrint(agencyFeedRow)['Name'])
     return None
@@ -111,21 +115,6 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
     INVALID_URLS[entryThumbPrint['FeedID']] = changelogValue
 
 
-'''
-# This function updates the GTFS INVALID_URL portion of the changelog only
-def updateInvalidUrlLog(agencyFeedRow,url,errorMessage):
-  fourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-  name = agencyFeedRow['agency_name']
-  feedID = agencyFeedRow['feed_id']
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [
-    name,
-    f'{dataLinkStart}{fourfour}',
-    "URL: " + url,
-    errorMessage
-  ]
-  INVALID_URLS[feedID] = changelogValue
-'''
 # Parses the GTFS zip file link out of the decodedMetadata
 def getZipUrl(description):
   locateLogic = re.compile('\\nGTFS URL: .*\\nAgency URL:')
@@ -204,7 +193,7 @@ def validateCoordinates(lat,lon):
   
 # This function validates that the locationType is actually a number instead of a string that cant be turned into a number
 def validateLocationType(locationType):
-  if locationType == 'omit':
+  if locationType == 'omit' or locationType == '':
     return True
   try:
     numLocation = float(locationType)
@@ -297,8 +286,9 @@ def updateTransitStopDataset():
     if notThere:
       continue
     '''
-    if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
-    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+    #if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
+    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+      print(catalogRow['name'])
     #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
@@ -367,6 +357,7 @@ def updateTransitStopDataset():
         else:
           print("________________________________OKAY!___________________________")
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
+        print("with catalogRow")
         updateChangeLog(getThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
           
 
@@ -524,7 +515,9 @@ def revision(fourfour, agencyFeedRow):
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or 
+    #if catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+      #pdb.set_trace()
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
@@ -619,9 +612,9 @@ def resetTransitStopDataset():
         
 
 def Main():
-  #updateCatalog()
-  #updateTransitStopDataset()
-  resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
+  updateCatalog()
+  updateTransitStopDataset()
+  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
