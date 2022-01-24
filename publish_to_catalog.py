@@ -287,9 +287,9 @@ def updateTransitStopDataset():
       continue
     '''
     #if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
-    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-      print(catalogRow['name'])
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
+      #print(catalogRow['name'])
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
@@ -331,9 +331,10 @@ def updateTransitStopDataset():
         try:
           postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
+          resetTransitStopDataset()
         except Exception as e:
           try:
-            print("trying to encode newStopData")
+            print("trying to encode newStopData with " + catalogRow['name'])
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
@@ -486,10 +487,6 @@ def revision(fourfour, agencyFeedRow):
   ### Step 3: Upload File to source_type
   ##########################
 
-  #@TODO: use the .get response from isValidZip() function for efficiency
-  #resp = requests.get(url=fetchLinkZipFileUrl)
-  #bytes = resp.content
-  # The above lines were used when calling a get request on the url twice for validation and use, but I changed it to call only once for both those things
   bytes = urlResponseIfValid.content
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
@@ -609,11 +606,120 @@ def resetTransitStopDataset():
           
     postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
     requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
-        
+
+
+
+def setBusMetadata(catalogRow):
+  description = catalogRow['name'] + "\n"
+  return { 
+    'name': catalogRow['name'],
+    'description': description,
+    "metadata" : {
+      "custom_fields" : {
+        "Common Core" : {
+          "Contact Email" : "NationalTransitMap@dot.gov",
+          "Contact Name" : "Derald Dudley",
+          "License" : "https://creativecommons.org/licenses/by/4.0/",
+          "Program Code" : "021:000",
+          "Publisher" : "Bureau of Transportation Statistics",
+          "Bureau Code" : "021:00",
+          "Public Access Level" : "public"
+        }
+      }
+    },
+    'tags': ["busstops"]
+  }
+
+def locateBusStopDataSet():
+  for catalogRow in CURRENT_CATALOG: 
+    if catalogRow['tags'] != None and 'busstops' in catalogRow['tags']:
+      return catalogRow
+
+def reviseTransitStopDataset():
+  print("revisionTransitStopDataset was called")
+  busEntry = locateBusStopDataSet()
+  fourfour = busEntry['id']
+
+
+  pdb.set_trace()
+  #fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+  #urlResponseIfValid = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
+  # Skip uploading to catalog if ZIP file is not valid
+  #if urlResponseIfValid == None: # This reports out on invalid GTFS urls
+  #  return None
+  
+  
+  ########
+  ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
+  ########
+  revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
+  action_type = 'replace'
+  url_for_step_1_post = f'{revision_url}/{fourfour}'
+  
+  permission = 'private'
+  metadata = setBusMetadata(busEntry)
+  body = json.dumps({
+    'metadata': metadata,
+      'action': {
+        'type': action_type,
+        'permission': permission
+      }
+  })
+  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    
+  create_source_uri = update_revision_response.json()['links']['create_source'] # It will also return the URL you need to create a source 
+  create_source_url = f'{DOMAIN_URL}{create_source_uri}'
+  pdb.set_trace()
+  ##########################
+  ### Step 2: Create new source
+  ##########################
+  now = datetime.now().strftime("%Y-%m-%d")
+  filename = agencyFeedRow['ntd_id'] + " " + now + '.zip' 
+  revision_source_type = 'upload'
+
+  parse_source = False
+
+  source_json = json.dumps({
+    'source_type': {
+      'type': revision_source_type,
+      'filename': filename
+    },
+    'parse_options': {
+      'parse_source': parse_source
+    }
+  })
+  
+  source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+
+  ##########################
+  ### Step 3: Upload File to source_type
+  ##########################
+
+  bytes = urlResponseIfValid.content
+  upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+  upload_url = f'{DOMAIN_URL}{upload_uri}'
+  upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+
+  #########
+  #Step 2a(5): Apply revisionHere you just apply your revision as you would if you were updating data.
+  #########
+  apply_revision_uri = update_revision_response.json()['links']['apply']
+  apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
+  revision_number = update_revision_response.json()['resource']['revision_seq']
+  body = json.dumps({
+  'resource': {
+      'id': revision_number
+    }
+  })
+  apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  return apply_revision_response
+
 
 def Main():
-  updateCatalog()
-  updateTransitStopDataset()
+  #updateCatalog()
+  #resetTransitStopDataset()
+  #updateTransitStopDataset()
+  reviseTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   
   with open('CHANGE_LOG.txt', 'w') as f:
