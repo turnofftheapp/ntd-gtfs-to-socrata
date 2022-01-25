@@ -58,26 +58,17 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
 
 # This funcitons checks if a gtfs link is reachable
 def urlIsValid(url,agencyFeedRow):
-  print("trying " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
   try:
     get = requests.get(url)
     if get.status_code == 200 or get.status_code == 201:
-      print(f"{url}: is reachable")
-      print("success " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
       return get
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
-      print(errorMessage)
-      #updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
       updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
-      print("Else on " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
       return None
       
   except Exception as e:
-    #updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
-    print("with agencyFeedRow")
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
-    print("Exception on  " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
     return None
 
 '''
@@ -149,7 +140,6 @@ def clearWhiteSpaces(listWithWhiteSpaceCharactersMaybe):
 def makeStopsObject(bytes):
   lineList = bytes.decode('UTF-8-sig').split("\n")
   headers = clearWhiteSpaces(lineList[0].split(","))
-  #pdb.set_trace()
   stopsObject = {}
   for header in headers:
     stopsObject[header] = []
@@ -178,12 +168,10 @@ def validateCoordinates(lat,lon):
     numLat = float(lat)
     numLon = float(lon)
   except Exception as e:
-    print(e)
     return False
   if numLat >= -90 and numLat <=90 and numLon >= -180 and numLon <= 180:
     return True
   else:
-    print("lat or lon were out of range")
     return False
   
 # This function validates that the locationType is actually a number instead of a string that cant be turned into a number
@@ -193,7 +181,6 @@ def validateLocationType(locationType):
   try:
     numLocation = float(locationType)
   except Exception as e:
-    print(e)
     return False
   return True
 
@@ -259,7 +246,27 @@ def makeStopLine(stopFileLine,feedID,stopsObject):
   return stopDict
 
 
+def locateDeletions(catalogRowThumbPrint, stopsObject):
+  relevantStops = DOMAIN_URL + "/resource/" + catalogRowThumbPrint['Fourfour']
+  # Any stop that is not in the stopsObject but in the query needs to he set for deletion
+  toDelete = []
+  pdb.set_trace()
+  for catalogStop in relevantStops:
+    for stopsObjectStop in stopsObject['feed_id_stop_id']:
+      if stopsObjectStop['feed_id_stop_id'] == catalogStop['feed_id_stop_id']:
+        toDelete.append(catalogStop)
+        break
+  pdb.set_trace()
 
+  
+
+  return toDelete
+
+
+  # query stops data for all stop records associated with the given existingFeedID (do a where query https://dev.socrata.com/docs/queries/where.html)
+  # identify deletions by comparing each stopsObject stop to each record returned from query
+  # iff rows to delete > 0
+    # do request to make those deletions (https://dev.socrata.com/publishers/soda-producer/direct-row-manipulation.html)
 
 # This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
 # busStopEntry in the catalog, that busStop is added
@@ -283,15 +290,14 @@ def updateTransitStopDataset():
     if notThere:
       continue
     '''
-    #if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
-    #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
-      #print(catalogRow['name'])
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
         # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
         # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
+        catalogRowThumbPrint = getCatalogThumbPrint(catalogRow)
         try:
           zipRequest = requests.get(catalogEntryZip)
           with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
@@ -299,10 +305,7 @@ def updateTransitStopDataset():
           z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
           stopFile = z.read("stops.txt")
         except Exception as e:
-          #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
-          updateChangeLog(getCatalogThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
-          print(getattr(e, 'message', repr(e)))
-          #os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
+          updateChangeLog(catalogRowThumbPrint, INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
           continue
 
         stopsObject = makeStopsObject(stopFile)
@@ -324,13 +327,13 @@ def updateTransitStopDataset():
           else:
             invalidLines = invalidLines + newStopLine['line']
           
+        stopsToDelete = locateDeletions(catalogRowThumbPrint, stopsObject)
 
         try:
           postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         except Exception as e:
           try:
-            print("trying to encode newStopData")
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
@@ -338,24 +341,22 @@ def updateTransitStopDataset():
             print(e)
         
         os.remove(os.getcwd()+"/tempzip.zip")
+
         busLineDict = {}
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
-        # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
-        strLineCount = str(lineCount)
-        strValidLineCount = str(validLineCount)
-
-        print("script found "+strLineCount+" lines which included " + strValidLineCount + " valid lines.")
-        if not postCatalogEntryBusStopsRequest.ok:
-          print("Error upserting bus stops")
+        
+        if stopsToDelete.split("\n").length > 0:
+          deleteCatalogEntryBusStopsRequest = requests.delete(ALL_STOP_LOCATIONS_ENDPOINT, stopsToDelete, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           pdb.set_trace()
+        
+      
+        pdb.set_trace()
+
+        if not postCatalogEntryBusStopsRequest.ok:
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-        else:
-          print("________________________________OKAY!___________________________")
-        # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
-        print("with catalogRow")
-        updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
+        updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -365,7 +366,6 @@ def getMetadataFieldIfExists(fieldName, agencyFeedRow):
 
 def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
   if fieldName not in agencyFeedRow:
-    #updateInvalidUrlLog(agencyFeedRow, "N/A", fieldName + ": Field does not exist")
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
     return ""
 
@@ -422,7 +422,6 @@ def setMetadata(agencyFeedRow):
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
   print("revision was called")
-  print(fourfour)
   print(agencyFeedRow['agency_name'])
   fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
   urlResponseIfValid = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
@@ -483,10 +482,6 @@ def revision(fourfour, agencyFeedRow):
   ### Step 3: Upload File to source_type
   ##########################
 
-  #@TODO: use the .get response from isValidZip() function for efficiency
-  #resp = requests.get(url=fetchLinkZipFileUrl)
-  #bytes = resp.content
-  # The above lines were used when calling a get request on the url twice for validation and use, but I changed it to call only once for both those things
   bytes = urlResponseIfValid.content
   upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
   upload_url = f'{DOMAIN_URL}{upload_uri}'
@@ -512,21 +507,14 @@ def revision(fourfour, agencyFeedRow):
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    #if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or 
-    #if catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-      #pdb.set_trace()
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
-        #print("existingFeedID No desc")
-        #print(existingFeedID)
       else:
         existingFeedID = getCatalogEntryFeedID(catalogRow['description']) # Identify FeedID in catalogRow
-        #print("existingFeedID desc")
-        #print(existingFeedID)
       
       if existingFeedID == incoming_feed_id: 
-        #print("################################# catalogRow['id']: "+catalogRow['id'])
         return catalogRow['id'] # This is a fourfour
   return None # This runs if no matching feed id is found in the entire catalog
 
@@ -609,9 +597,9 @@ def resetTransitStopDataset():
 
 def Main():
   #resetTransitStopDataset()
-  updateCatalog()
+  #updateCatalog()
   updateTransitStopDataset()
-  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
+  resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
