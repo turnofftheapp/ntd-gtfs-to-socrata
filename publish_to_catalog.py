@@ -30,6 +30,8 @@ CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
 INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
+TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
+OMIT_BUS_COLUMN_VALUE = 'omit'
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -38,44 +40,44 @@ DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
 
-# This function takes in either a catalog entry or an agency feed row and returns its "thumbprint" that can be used to update the changelog
-def getThumbPrint(entry):
+# This function takes in a catalog entry and returns its "thumbprint" that can be used to update the changelog
+def getCatalogThumbPrint(catalogRow):
   thumbPrint = {}
-  if 'ntd_name' in entry: #Then its an agencyFeedRow
-    thumbPrint['Name'] = entry['ntd_name']
-    thumbPrint['FeedID'] = entry['feed_id']
-    thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(entry['feed_id'])
-  elif 'name' in entry: #Then its a catalogRow
-    thumbPrint['Name'] = entry['name']
-    thumbPrint['FeedID'] = getCatalogEntryFeedID(entry['description'])
-    thumbPrint['Fourfour'] = entry['id']
+  thumbPrint['Name'] = catalogRow['name']
+  thumbPrint['FeedID'] = getCatalogEntryFeedID(catalogRow['description'])
+  thumbPrint['Fourfour'] = catalogRow['id']
+  return thumbPrint
 
-  #if thumbPrint['Name'] == 'TEST: City of Yakima, dba: Yakima Transit':
-    #pdb.set_trace()
+# This function takes in an agencyFeedRow and returns its "thumbprint" that can be used to update the changelog
+def getAgencyFeedThumbPrint(agencyFeedRow):
+  thumbPrint = {}
+  thumbPrint['Name'] = agencyFeedRow['ntd_name']
+  thumbPrint['FeedID'] = agencyFeedRow['feed_id']
+  thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   return thumbPrint
 
 # This funcitons checks if a gtfs link is reachable
 def urlIsValid(url,agencyFeedRow):
-  print("trying " + getThumbPrint(agencyFeedRow)['Name'])
+  print("trying " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
   try:
     get = requests.get(url)
     if get.status_code == 200 or get.status_code == 201:
       print(f"{url}: is reachable")
-      print("success " + getThumbPrint(agencyFeedRow)['Name'])
+      print("success " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
       return get
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
       print(errorMessage)
       #updateInvalidUrlLog(agencyFeedRow,url,errorMessage)
-      updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
-      print("Else on " + getThumbPrint(agencyFeedRow)['Name'])
+      updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
+      print("Else on " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
       return None
       
   except Exception as e:
     #updateInvalidUrlLog(agencyFeedRow,url,getattr(e, 'message', repr(e)))
     print("with agencyFeedRow")
-    updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
-    print("Exception on  " + getThumbPrint(agencyFeedRow)['Name'])
+    updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
+    print("Exception on  " + getAgencyFeedThumbPrint(agencyFeedRow)['Name'])
     return None
 
 '''
@@ -193,7 +195,7 @@ def validateCoordinates(lat,lon):
   
 # This function validates that the locationType is actually a number instead of a string that cant be turned into a number
 def validateLocationType(locationType):
-  if locationType == 'omit' or locationType == '':
+  if locationType == OMIT_BUS_COLUMN_VALUE or locationType == '':
     return True
   try:
     numLocation = float(locationType)
@@ -203,28 +205,30 @@ def validateLocationType(locationType):
   return True
 
 
-# This funciton takes in an integer and the feedID of where the stop file came from and the stopsObject and
-# returns a stops data in the format needed to do a bulk upsert with a variable made of stops made with this function
-def makeStopLine(stop,feedID,stopsObject):
-  stopName = stopsObject['stop_name'][stop]
-  stopLat = stripNum(stopsObject['stop_lat'][stop])
-  stopLon = stripNum(stopsObject['stop_lon'][stop])
+# This funciton takes in a line number of the stops.txt file, the feedID of where the stop file came from and the 
+# stopsObject which was made of the data from the stops.txt file. The indecies in stops Object corespond with the line
+# number in the stops.txt file. The purpose of this file is to further process the data in stopsObject, index by index
+# to do a bulk upsert with a variable made of stops made with this function
+def makeStopLine(stopFileLine,feedID,stopsObject):
+  stopName = stopsObject['stop_name'][stopFileLine]
+  stopLat = stripNum(stopsObject['stop_lat'][stopFileLine])
+  stopLon = stripNum(stopsObject['stop_lon'][stopFileLine])
   try:
-    locationType = stopsObject['location_type'][stop]
+    locationType = stopsObject['location_type'][stopFileLine]
   except Exception as e:
-    locationType = 'omit'
+    locationType = OMIT_BUS_COLUMN_VALUE
   try:
-    stopID = stopsObject['stop_id'][stop]
+    stopID = stopsObject['stop_id'][stopFileLine]
   except Exception as e:
-    stopID = 'omit'
+    stopID = OMIT_BUS_COLUMN_VALUE
   try:
-    stopCode = stopsObject['stop_code'][stop]
+    stopCode = stopsObject['stop_code'][stopFileLine]
   except Exception as e:
-    stopCode = 'omit'
+    stopCode = OMIT_BUS_COLUMN_VALUE
   try:
-    stopZoneID = stopsObject['zone_id'][stop]
+    stopZoneID = stopsObject['zone_id'][stopFileLine]
   except Exception as e:
-    stopZoneID = 'omit'
+    stopZoneID = OMIT_BUS_COLUMN_VALUE
   
   
   # The below if statment is to ensure the header line is built properly
@@ -241,7 +245,7 @@ def makeStopLine(stop,feedID,stopsObject):
   stopDict['line'] = ''
   possibleFields = [feed_id_stop_id,stopCode,stopName,stopID,stopLat,stopLon,stopZoneID,locationType,stopLocation]
   for field in possibleFields:
-    if field != 'omit':
+    if field != OMIT_BUS_COLUMN_VALUE:
       stopDict['line'] = stopDict['line'] + field + ","
   stopDict['line'] = stopDict['line'][:-1] + "\n" #removes the comma most recently added before putting the newline character
 
@@ -249,15 +253,15 @@ def makeStopLine(stop,feedID,stopsObject):
   #stopDict['line'] = feed_id_stop_id +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
   
   # TODO make the below check more rigorous. Alot of upsertions are failing because some lat and longs are random english that was probably meant to be in some other field
-  if stop != 0: # If stop==0, then it is the header row and wont need to go through these checks
+  if stopFileLine != 0: # If stop==0, then it is the header row and wont need to go through these checks
     if not validateCoordinates(stopLat,stopLon):
-      stopDict['ToInValidRecord'] = True
+      stopDict[TO_INVALID_RECORD] = True
     elif not validateLocationType(locationType):
-      stopDict['ToInValidRecord'] = True
+      stopDict[TO_INVALID_RECORD] = True
     else:
-      stopDict['ToInValidRecord'] = False
+      stopDict[TO_INVALID_RECORD] = False
   else:
-    stopDict['ToInValidRecord'] = False
+    stopDict[TO_INVALID_RECORD] = False
 
   return stopDict
 
@@ -303,7 +307,7 @@ def updateTransitStopDataset():
           stopFile = z.read("stops.txt")
         except Exception as e:
           #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
-          updateChangeLog(getThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
+          updateChangeLog(getCatalogThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
           print(getattr(e, 'message', repr(e)))
           #os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
@@ -321,7 +325,7 @@ def updateTransitStopDataset():
           if lineCount == 1: # Adding header to the invalid lines data
             invalidLines = invalidLines + newStopLine['line']
 
-          if newStopLine['ToInValidRecord'] == False: #if it is a valid line
+          if newStopLine[TO_INVALID_RECORD] == False: #if it is a valid line
             newStopData = newStopData + newStopLine['line']
             validLineCount += 1 
           else:
@@ -358,7 +362,7 @@ def updateTransitStopDataset():
           print("________________________________OKAY!___________________________")
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
         print("with catalogRow")
-        updateChangeLog(getThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
+        updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -369,7 +373,7 @@ def getMetadataFieldIfExists(fieldName, agencyFeedRow):
 def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
   if fieldName not in agencyFeedRow:
     #updateInvalidUrlLog(agencyFeedRow, "N/A", fieldName + ": Field does not exist")
-    updateChangeLog(getThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
+    updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
     return ""
 
   # Validate URL (from https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45)
@@ -559,14 +563,14 @@ def updateCatalog():
           revision_response = revision(None, agencyFeedRow)
           if revision_response != None:
             #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
-            updateChangeLog(getThumbPrint(agencyFeedRow), CREATE_ACTION)
+            updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
           
         else:
           print("replacing") 
           revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
           if revision_response != None:
             #updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
-            updateChangeLog(getThumbPrint(agencyFeedRow), UPDATE_ACTION)
+            updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
 
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
@@ -601,7 +605,7 @@ def resetTransitStopDataset():
       if lineCount == 1: # Adding header to the invalid lines data
         invalidLines = invalidLines + newStopLine['line']
 
-      if newStopLine['ToInValidRecord'] == False: #if it is a valid line
+      if newStopLine[TO_INVALID_RECORD] == False: #if it is a valid line
         newStopData = newStopData + newStopLine['line']
         validLineCount += 1 
       else:
