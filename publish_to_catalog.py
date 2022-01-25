@@ -138,16 +138,9 @@ def getCatalogEntryFeedID(catalogRowDescription):
       return feedID
 
 # This function takes in a list and returns the same list with all items in it being cleared of leading and trailing whitespaces
-def clearWhiteSpaces(listWithWhiteSpaceCharactersMaybe,header=False):
-  #if header:
-    #pdb.set_trace()
+def clearWhiteSpaces(listWithWhiteSpaceCharactersMaybe):
   newList = []
   for item in listWithWhiteSpaceCharactersMaybe:
-    #list1=[]
-    #list1[:0]=item
-    #for thing in list1:
-        #if thing.isspace() and thing != " " and header:
-            #pdb.set_trace()
     newitemWithoutQuotes = item.strip('"')
     newItem = newitemWithoutQuotes.strip()
     newList.append(newItem)
@@ -155,7 +148,7 @@ def clearWhiteSpaces(listWithWhiteSpaceCharactersMaybe,header=False):
 
 def makeStopsObject(bytes):
   lineList = bytes.decode('UTF-8-sig').split("\n")
-  headers = clearWhiteSpaces(lineList[0].split(","),True)
+  headers = clearWhiteSpaces(lineList[0].split(","))
   #pdb.set_trace()
   stopsObject = {}
   for header in headers:
@@ -291,9 +284,9 @@ def updateTransitStopDataset():
       continue
     '''
     #if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
-    if catalogRow['name'] == "NTM: TEST: Pierce County Transportation Benefit Area Authority" or catalogRow['name'] == "TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: City of Yakima, dba: Yakima Transit":
-      print(catalogRow['name'])
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
+      #print(catalogRow['name'])
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
@@ -535,8 +528,7 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
       if existingFeedID == incoming_feed_id: 
         #print("################################# catalogRow['id']: "+catalogRow['id'])
         return catalogRow['id'] # This is a fourfour
-      else:
-        return None
+  return None # This runs if no matching feed id is found in the entire catalog
 
 
 # This is the highest level function that takes in the data, iterates through it, 
@@ -616,10 +608,11 @@ def resetTransitStopDataset():
         
 
 def Main():
+  #resetTransitStopDataset()
   updateCatalog()
   updateTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
-  
+  print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
 
