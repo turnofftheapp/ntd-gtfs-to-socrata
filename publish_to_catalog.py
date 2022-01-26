@@ -32,6 +32,9 @@ INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
 OMIT_BUS_COLUMN_VALUE = 'omit'
+KEEP_STOP = 'keep stop'
+DELETE_STOP = 'delete stop'
+
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -145,6 +148,12 @@ def makeStopsObject(bytes):
     stopsObject[header] = []
   i=0
   while i < len(lineList):
+    print("makeStopsObject")
+    ''''''
+    if i>1 and i<8: #Skipping 2-4 to test deletions
+      i += 1
+      continue
+    ''''''
     j=0
     stopAsList = clearWhiteSpaces(lineList[i].split(","))
     if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
@@ -247,19 +256,33 @@ def makeStopLine(stopFileLine,feedID,stopsObject):
 
 
 def locateDeletions(catalogRowThumbPrint, stopsObject):
-  relevantStops = DOMAIN_URL + "/resource/" + catalogRowThumbPrint['Fourfour']
-  # Any stop that is not in the stopsObject but in the query needs to he set for deletion
-  toDelete = []
-  pdb.set_trace()
+  # Getting the catalogStop data from the ALL_STOP_LOCATIONS dataset
+  relevantStopsEndpoint = ALL_STOP_LOCATIONS_ENDPOINT + ".json?$where=starts_with(feed_id_stop_id, '" + catalogRowThumbPrint['FeedID'] + "')"
+  relevantStopsRequest = requests.get(relevantStopsEndpoint, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+  relevantStops = json.loads(relevantStopsRequest.content.decode('UTF-8'))
+  catalogDict = {}
   for catalogStop in relevantStops:
-    for stopsObjectStop in stopsObject['feed_id_stop_id']:
-      if stopsObjectStop['feed_id_stop_id'] == catalogStop['feed_id_stop_id']:
-        toDelete.append(catalogStop)
-        break
-  pdb.set_trace()
-
+    catalogDict[catalogStop['feed_id_stop_id']] = KEEP_STOP
   
+  # Getting relevant identifiers from the one specific agency in the catalog that we are looking at
+  incomingIdentifiers = []
+  for stopID in stopsObject['stop_id']:
+    if stopID == 'stop_id': # The catalogStops data has no header entry, so we will skip the header entry in the stopsObject which is derived from the catalogRow for that specific agency
+      continue
+    incomingIdentifiers.append(catalogRowThumbPrint['FeedID'] + "_" + stopID)
 
+  toDelete = []
+  # Any stop that is not in the stopsObject but in the query needs to he set for deletion
+  for catalogIdentifier in catalogDict:
+    if catalogIdentifier not in incomingIdentifiers:
+      catalogDict[catalogIdentifier] = DELETE_STOP
+      toDelete.append(
+        {
+        "feed_id_stop_id": catalogIdentifier,
+        ":deleted" : True
+        }
+      )
+  pdb.set_trace()
   return toDelete
 
 
@@ -315,6 +338,7 @@ def updateTransitStopDataset():
         validLineCount = 0 # This includes the header!
         invalidLines = "" 
         while lineCount < len(stopsObject['stop_lat']):
+          print("here")
           newStopLine = makeStopLine(lineCount,existingFeedID,stopsObject)
           lineCount += 1
 
@@ -346,13 +370,11 @@ def updateTransitStopDataset():
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
-        
-        if stopsToDelete.split("\n").length > 0:
-          deleteCatalogEntryBusStopsRequest = requests.delete(ALL_STOP_LOCATIONS_ENDPOINT, stopsToDelete, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+        ''''''
+        if len(stopsToDelete) > 0:
+          deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, stopsToDelete, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           pdb.set_trace()
-        
-      
-        pdb.set_trace()
+        ''''''
 
         if not postCatalogEntryBusStopsRequest.ok:
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
@@ -599,7 +621,7 @@ def Main():
   #resetTransitStopDataset()
   #updateCatalog()
   updateTransitStopDataset()
-  resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
+  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
