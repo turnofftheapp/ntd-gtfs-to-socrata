@@ -515,8 +515,7 @@ def revision(fourfour, agencyFeedRow):
 # Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
-    if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
       else:
