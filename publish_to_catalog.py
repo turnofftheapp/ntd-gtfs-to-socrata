@@ -284,6 +284,15 @@ def locateDeletions(catalogRowThumbPrint, stopsObject):
       )
   return toDelete
 
+def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
+  
+  stopsToDelete = locateDeletions(catalogRowThumbPrint, stopsObject)
+  if len(stopsToDelete) > 0:
+    deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    #requestResults = requestResults + "\n" + deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].replace('"','')
+    requestResults['Rows Deleted'] = int(deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].split(":")[1])
+  
+  return requestResults
 
   # query stops data for all stop records associated with the given existingFeedID (do a where query https://dev.socrata.com/docs/queries/where.html)
   # identify deletions by comparing each stopsObject stop to each record returned from query
@@ -348,8 +357,6 @@ def updateTransitStopDataset():
             validLineCount += 1 
           else:
             invalidLines = invalidLines + newStopLine['line']
-          
-        stopsToDelete = locateDeletions(catalogRowThumbPrint, stopsObject)
 
         try:
           postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
@@ -363,20 +370,18 @@ def updateTransitStopDataset():
         
         os.remove(os.getcwd()+"/tempzip.zip")
 
+        updatedRequestResults = deleteIfNecessary(catalogRowThumbPrint, stopsObject, requestResults)
+
         busLineDict = {}
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
     
-        if len(stopsToDelete) > 0:
-          deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-          #requestResults = requestResults + "\n" + deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].replace('"','')
-          requestResults['Rows Deleted'] = int(deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].split(":")[1])
-
+        
 
         if not postCatalogEntryBusStopsRequest.ok:
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
-        updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
+        updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=updatedRequestResults,busNumbers=busLineDict)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
