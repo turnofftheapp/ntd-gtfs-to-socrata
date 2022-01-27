@@ -601,10 +601,10 @@ def resetTransitStopDataset():
         
 
 def Main():
-  #resetTransitStopDataset()
   #updateCatalog()
   updateTransitStopDataset()
-  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
+  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry for test purposes
+  
   print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
