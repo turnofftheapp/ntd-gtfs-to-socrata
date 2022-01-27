@@ -61,7 +61,7 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
 
 # Checks if the given URL is reachable and if so returns <GET request response object/data>, None
 # If URL has issues return: None, <error message>
-def urlIsValid(url,agencyFeedRow):
+def urlIsValid(url):
   try:
     get = requests.get(url)
     if get.ok:
@@ -70,43 +70,32 @@ def urlIsValid(url,agencyFeedRow):
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
   except Exception as e:
     errorMessage = getattr(e, 'message', repr(e))
-    
-  updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
+
   return None, errorMessage
 
-'''
-# This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
-def updateChangeLog(agencyFeedRow, action, fourfour):
-  name = agencyFeedRow['agency_name']
-  feedID = agencyFeedRow['feed_id']
-  dataLinkStart = 'https://data.bts.gov/d/'
-  changelogValue = [name,f'{dataLinkStart}{fourfour}']
-  if action == CREATE_ACTION:
-    DATA_CREATED[feedID] = changelogValue
-  elif action == UPDATE_ACTION:
-    DATA_UPDATED[feedID] = changelogValue
-  '''
-
 def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
-  if entryThumbPrint['Fourfour'] != None:
-    dataLink = 'https://data.bts.gov/d/' + entryThumbPrint['Fourfour']
-  changelogValue = [entryThumbPrint['Name'],dataLink]
   if action == CREATE_ACTION:
-    DATA_CREATED[entryThumbPrint['FeedID']] = changelogValue
+    DATA_CREATED[entryThumbPrint['FeedID']] = [
+      entryThumbPrint['Name']
+    ]
   elif action == UPDATE_ACTION:
-    DATA_UPDATED[entryThumbPrint['FeedID']] = changelogValue
+    DATA_UPDATED[entryThumbPrint['FeedID']] = [
+      entryThumbPrint['Name'],
+      "https://data.bts.gov/d/" + entryThumbPrint['Fourfour']
+    ]
   elif action == BUS_UPSERT_ACTION:
     feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
-    changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
-    BUS_STOPS_UPSERTED[feedID_name] = changelogValue
-  elif action == INVALID_URL_ACTION:
-    changelogValue = [
+    BUS_STOPS_UPSERTED[feedID_name] = [
       entryThumbPrint['Name'],
-      dataLink,
+      Message,
+      busNumbers
+    ]
+  elif action == INVALID_URL_ACTION:
+    INVALID_URLS[entryThumbPrint['FeedID']] = [
+      entryThumbPrint['Name'],
       "URL: " + url,
       Message
     ]
-    INVALID_URLS[entryThumbPrint['FeedID']] = changelogValue
 
 
 # Parses the GTFS zip file link out of the decodedMetadata
@@ -379,15 +368,8 @@ def getMetadataFieldIfExists(fieldName, agencyFeedRow):
     return agencyFeedRow[fieldName]
   return ""
 
-def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
-  if fieldName not in agencyFeedRow:
-    updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
-    return ""
-
-  return agencyFeedRow[fieldName]
-
 def setMetadata(agencyFeedRow, fetchLinkErrorMessage):
-  gtfsUrlFieldValue = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+  gtfsUrlFieldValue = getMetadataFieldIfExists('fetch_link', agencyFeedRow)
   if gtfsUrlFieldValue == "":
     gtfsUrlFieldValue = "No URL provided"
   elif fetchLinkErrorMessage != None:
@@ -399,7 +381,7 @@ def setMetadata(agencyFeedRow, fetchLinkErrorMessage):
   description += FEED_ID_PREFIX + agencyFeedRow['feed_id'] + "\n"
   description += "GTFS: " + getMetadataFieldIfExists('has_gtfs', agencyFeedRow) + "\n"
   description += "GTFS URL: " + gtfsUrlFieldValue + "\n"
-  description += "Agency URL: " + getMetadataUrlFieldIfExists('agency_website', agencyFeedRow) + "\n"
+  description += "Agency URL: " + getMetadataFieldIfExists('agency_website', agencyFeedRow) + "\n"
   description += "Region: " + getMetadataFieldIfExists('uza', agencyFeedRow) + "\n"
   description += "City: " + getMetadataFieldIfExists('city', agencyFeedRow) + "\n" # Update
   description += "State: " + getMetadataFieldIfExists('state', agencyFeedRow) + "\n" # Update
@@ -428,10 +410,11 @@ def setMetadata(agencyFeedRow, fetchLinkErrorMessage):
 # 'fourfour' is the dataset ID of an existing dataset to update/replace
 #the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
 def revision(fourfour, agencyFeedRow):
-  print("revision was called")
-  print(agencyFeedRow['agency_name'])
-  fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
-  fetchLinkResponseIfValid,fetchLinkErrorMessage = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
+  fetchLinkZipFileUrl = getMetadataFieldIfExists('fetch_link', agencyFeedRow)
+  fetchLinkResponseIfValid,fetchLinkErrorMessage = urlIsValid(fetchLinkZipFileUrl)
+
+  if fetchLinkZipFileUrl != "" and fetchLinkErrorMessage != None:
+    updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fetchLinkErrorMessage, url=fetchLinkZipFileUrl)
   
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
@@ -440,10 +423,12 @@ def revision(fourfour, agencyFeedRow):
   if fourfour == None:
     action_type = 'update' #Options are Update, Replace, or Delete
     url_for_step_1_post = revision_url
+    print("Creating dataset for " + agencyFeedRow['agency_name'])
   else:
     action_type = 'replace'
     url_for_step_1_post = f'{revision_url}/{fourfour}'
-  
+    print("Updating dataset for " + agencyFeedRow['agency_name'] + " (" + url_for_step_1_post + ")")
+
   permission = 'private'
   metadata = setMetadata(agencyFeedRow, fetchLinkErrorMessage)
   body = json.dumps({
@@ -509,7 +494,7 @@ def revision(fourfour, agencyFeedRow):
 
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
 # in the catalog entries descriptions.
-# Returns a fourfour if it finds a matching FeedID, returns null if no matching FeedID is found
+# Returns a fourfour if it finds a matching FeedID, returns None if no matching FeedID is found
 def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
   for catalogRow in CURRENT_CATALOG:
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
@@ -535,24 +520,14 @@ def updateCatalog():
   agencyFeedResponse = requests.get(api_request, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
-    # The line below calls the function that looks through metadata to determine if dataset exists 
-    # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
-    # create or replace is made for that row of incoming data
     agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
     if agencyFeedRowFourfour == None:
-      print("creating")
-      # Since the revision is created below before the update to the changelog, the fourfour should exist
-      # by the time the change log entry is entered for that new data
       revision_response = revision(None, agencyFeedRow)
       if revision_response != None:
-        #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
         updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
-      
     else:
-      print("replacing") 
       revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
       if revision_response != None:
-        #updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
         updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
@@ -602,7 +577,6 @@ def Main():
   updateTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry for test purposes
 
-  print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
 
