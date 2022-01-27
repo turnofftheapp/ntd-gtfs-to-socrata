@@ -51,7 +51,7 @@ def getCatalogThumbPrint(catalogRow):
 # This function takes in an agencyFeedRow and returns its "thumbprint" that can be used to update the changelog
 def getAgencyFeedThumbPrint(agencyFeedRow):
   thumbPrint = {}
-  thumbPrint['Name'] = agencyFeedRow['ntd_name']
+  thumbPrint['Name'] = agencyFeedRow['agency_name']
   thumbPrint['FeedID'] = agencyFeedRow['feed_id']
   thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   return thumbPrint
