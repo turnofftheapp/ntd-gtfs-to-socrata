@@ -356,7 +356,7 @@ def updateTransitStopDataset():
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
         print("with catalogRow")
         updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
-          
+
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if fieldName in agencyFeedRow:
@@ -369,21 +369,7 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
     return ""
 
-  # Validate URL (from https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45)
-  # urlRegex = re.compile(
-  #    r'^(?:http|ftp)s?://' # http:// or https://
-  #    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
-  #    r'localhost|' #localhost...
-  #    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
-  #    r'(?::\d+)?' # optional port
-  #    r'(?:/?|[/?]\S+)$', re.IGNORECASE)#
-
-  #  if (re.match(urlRegex, agencyFeedRow[fieldName]) is None):
-  #    updateInvalidUrlLog(agencyFeedRow, agencyFeedRow[fieldName], "URL is invalid.")
-  #    return ""
-
   return agencyFeedRow[fieldName]
-
 
 def setMetadata(agencyFeedRow):
   description = "Agency Name: " + agencyFeedRow['agency_name'] + "\n"
