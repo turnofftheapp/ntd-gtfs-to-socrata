@@ -20,7 +20,7 @@ STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
 AGENCY_FEED_DATASET_ID = "dw2s-2w2x" # Test dataset with 3 rows 
-#AGENCY_FEED_DATASET_ID = "yj2k-sj77" # Final dataset with all rows
+#AGENCY_FEED_DATASET_ID = "ymsd-c3s5" # Final dataset with all rows
 CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is the link to all sets in the NTD catalog
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89'
@@ -54,7 +54,7 @@ def getCatalogThumbPrint(catalogRow):
 # This function takes in an agencyFeedRow and returns its "thumbprint" that can be used to update the changelog
 def getAgencyFeedThumbPrint(agencyFeedRow):
   thumbPrint = {}
-  thumbPrint['Name'] = agencyFeedRow['ntd_name']
+  thumbPrint['Name'] = agencyFeedRow['agency_name']
   thumbPrint['FeedID'] = agencyFeedRow['feed_id']
   thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   return thumbPrint
@@ -376,13 +376,10 @@ def updateTransitStopDataset():
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
-    
         
-
         if not postCatalogEntryBusStopsRequest.ok:
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
         updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=updatedRequestResults,busNumbers=busLineDict)
-          
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if fieldName in agencyFeedRow:
@@ -394,21 +391,7 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fieldName + ": Field does not exist",url="N/A")
     return ""
 
-  # Validate URL (from https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45)
-  # urlRegex = re.compile(
-  #    r'^(?:http|ftp)s?://' # http:// or https://
-  #    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
-  #    r'localhost|' #localhost...
-  #    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
-  #    r'(?::\d+)?' # optional port
-  #    r'(?:/?|[/?]\S+)$', re.IGNORECASE)#
-
-  #  if (re.match(urlRegex, agencyFeedRow[fieldName]) is None):
-  #    updateInvalidUrlLog(agencyFeedRow, agencyFeedRow[fieldName], "URL is invalid.")
-  #    return ""
-
   return agencyFeedRow[fieldName]
-
 
 def setMetadata(agencyFeedRow):
   description = "Agency Name: " + agencyFeedRow['agency_name'] + "\n"
@@ -549,34 +532,32 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # each row of data
 def updateCatalog():
   
+  api_request = "https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json"
+  api_request += "?$where=have_consent_for_ntm=True" # Filter to only import feeds where original_consent_declined field is FALSE
+
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
-  agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  agencyFeedResponse = requests.get(api_request, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
-    # Only import feeds where original_consent_declined field is FALSE
-  
-    if 'original_consent_declined' in agencyFeedRow:
-      if agencyFeedRow['original_consent_declined'] == False:
-        # The line below calls the function that looks through metadata to determine if dataset exists 
-        # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
-        # create or replace is made for that row of incoming data
-        agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
-        if agencyFeedRowFourfour == None:
-          print("creating")
-          # Since the revision is created below before the update to the changelog, the fourfour should exist
-          # by the time the change log entry is entered for that new data
-          revision_response = revision(None, agencyFeedRow)
-          if revision_response != None:
-            #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
-            updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
-          
-        else:
-          print("replacing") 
-          revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
-          if revision_response != None:
-            #updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
-            updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
-
+    # The line below calls the function that looks through metadata to determine if dataset exists 
+    # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
+    # create or replace is made for that row of incoming data
+    agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+    if agencyFeedRowFourfour == None:
+      print("creating")
+      # Since the revision is created below before the update to the changelog, the fourfour should exist
+      # by the time the change log entry is entered for that new data
+      revision_response = revision(None, agencyFeedRow)
+      if revision_response != None:
+        #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
+        updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
+      
+    else:
+      print("replacing") 
+      revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
+      if revision_response != None:
+        #updateChangeLog(agencyFeedRow,UPDATE_ACTION,agencyFeedRowFourfour)
+        updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
 
 # This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
 def resetTransitStopDataset():  
