@@ -148,12 +148,12 @@ def makeStopsObject(bytes):
     stopsObject[header] = []
   i=0
   while i < len(lineList):
-    print("makeStopsObject")
-    ''''''
-    if i>1 and i<8: #Skipping 2-4 to test deletions
+    ''' #This little if statement was strictly for simulating a stops.txt file that had less rows than the last time it was upserted
+    if i>1 and i<5: #Skipping 2-4 to test deletions
+      print(clearWhiteSpaces(lineList[i].split(",")))
       i += 1
       continue
-    ''''''
+    '''
     j=0
     stopAsList = clearWhiteSpaces(lineList[i].split(","))
     if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
@@ -282,7 +282,6 @@ def locateDeletions(catalogRowThumbPrint, stopsObject):
         ":deleted" : True
         }
       )
-  pdb.set_trace()
   return toDelete
 
 
@@ -338,7 +337,6 @@ def updateTransitStopDataset():
         validLineCount = 0 # This includes the header!
         invalidLines = "" 
         while lineCount < len(stopsObject['stop_lat']):
-          print("here")
           newStopLine = makeStopLine(lineCount,existingFeedID,stopsObject)
           lineCount += 1
 
@@ -361,7 +359,6 @@ def updateTransitStopDataset():
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
-            pdb.set_trace()
             print(e)
         
         os.remove(os.getcwd()+"/tempzip.zip")
@@ -370,11 +367,12 @@ def updateTransitStopDataset():
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
-        ''''''
+    
         if len(stopsToDelete) > 0:
-          deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, stopsToDelete, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-          pdb.set_trace()
-        ''''''
+          deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+          #requestResults = requestResults + "\n" + deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].replace('"','')
+          requestResults['Rows Deleted'] = int(deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].split(":")[1])
+
 
         if not postCatalogEntryBusStopsRequest.ok:
           requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
