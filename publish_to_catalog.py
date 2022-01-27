@@ -34,7 +34,7 @@ TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which h
 OMIT_BUS_COLUMN_VALUE = 'omit'
 PRIVATE_DATASET_LINK = "https://data.bts.gov/dataset/PRIVATE-NTM-Ingest-Script-Log/ngsm-beqg"
 PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
-
+BUS_UPSERT_ERROR = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -181,7 +181,6 @@ def validateCoordinates(lat,lon):
     numLat = float(lat)
     numLon = float(lon)
   except Exception as e:
-    print(e)
     return False
   if numLat >= -90 and numLat <=90 and numLon >= -180 and numLon <= 180:
     return True
@@ -196,7 +195,6 @@ def validateLocationType(locationType):
   try:
     numLocation = float(locationType)
   except Exception as e:
-    print(e)
     return False
   return True
 
@@ -287,9 +285,9 @@ def updateTransitStopDataset():
       continue
     '''
     #if catalogRow['name'] == 'NTM: Fairbanks North Star Borough':
-    #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
+    if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
       #print(catalogRow['name'])
-    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
@@ -337,6 +335,7 @@ def updateTransitStopDataset():
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
+            print("heyhey")
             pdb.set_trace()
             print(e)
         
@@ -353,7 +352,7 @@ def updateTransitStopDataset():
         if not postCatalogEntryBusStopsRequest.ok:
           print("Error upserting bus stops")
           pdb.set_trace()
-          requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+          requestResults = BUS_UPSERT_ERROR
         else:
           print("________________________________OKAY!___________________________")
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
@@ -538,15 +537,20 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def updateCatalog():
-  
+  print("updateCatalog() was called")
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get("https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
     # Only import feeds where original_consent_declined field is FALSE
-  
-    if 'original_consent_declined' in agencyFeedRow:
-      if agencyFeedRow['original_consent_declined'] == False:
+
+
+    #UNCOMMENT the below two lines when done testing!!!
+    #if 'original_consent_declined' in agencyFeedRow:
+      #if agencyFeedRow['original_consent_declined'] == False:
+
+
+
         # The line below calls the function that looks through metadata to determine if dataset exists 
         # and returns the given fourfour or keyword "None", based on what is returned, the decision to 
         # create or replace is made for that row of incoming data
@@ -609,28 +613,50 @@ def resetTransitStopDataset():
     postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
     requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
 
+def stringifyBusErrors(dict):
+  #changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
+  newString = ""
+  for key,value in dict.items():
+    if value[2] == BUS_UPSERT_ERROR:
+      nameAndID = key.split("_")
+      id = nameAndID[0]
+      name = nameAndID[1]
+      newString = newString + name + " (" + id  + "): " + value[2] + " (Fetch Link: " + value[1] + ")" + "\n\n"
+  return newString
+
+def stringifyInvalidURLs(dict):
+  newString = ""
+  for key,value in dict.items():
+    newString = newString + value[0] + " (" + key  + "): " + value[3] + " (Fetch Link: " + value[1] + ")" + "\n\n"
+  return newString
+
+
+def convertChangeLogForPrivateDataset():
+  invalidString = stringifyInvalidURLs(CHANGE_LOG["Invalid GTFS URLs"])
+  upsertErrorString = stringifyBusErrors(CHANGE_LOG["Bus stop upsertion attempts"])
+  final = invalidString + "\n" + upsertErrorString
+  pdb.set_trace()
+  return final
 
 def updatePrivateDataSet(successfullRun,errors):
-  with open('CHANGE_LOG.txt', 'r') as f:
-    logging = f
-    '''
+
   if successfullRun == True:
-    logging = json.dumps(CHANGE_LOG, indent=4)
+    logging = convertChangeLogForPrivateDataset()
   else:
     logging = errors
-  '''
+  
   newRun = [
     {
       "run_date": datetime.now().strftime("%Y-%m-%d"),
       "run_successful": successfullRun,
-      "log": json.dumps(logging, indent=4)
+      "log": logging
     }
   ]
   requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   pdb.set_trace()
 
 def Main():
-  '''
+  #resetTransitStopDataset()
   successfullRun = False
   errors = ""
   try:
@@ -639,14 +665,14 @@ def Main():
     sucessfullRun = True
   except Exception as e:
     errors = e
-
+  
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
-  print(json.dumps(CHANGE_LOG, indent=4))
+  #print(json.dumps(CHANGE_LOG, indent=4))
   
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
-  '''
-  updatePrivateDataSet(True,"")
+
+  updatePrivateDataSet(True,errors)
 
 Main()
 
