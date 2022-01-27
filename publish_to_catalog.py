@@ -455,7 +455,8 @@ def revision(fourfour, agencyFeedRow):
         'permission': permission
       }
   })
-  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  #update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=_HEADERS, auth=CREDENTIALS)
   if fourfour == None:
     fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
     
@@ -654,23 +655,25 @@ def updatePrivateDataSet(successfullRun,errors):
       "log": logging
     }
   ]
+  pdb.set_trace()
   requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   pdb.set_trace()
 
 def Main():
-  pdb.set_trace()
-  #resetTransitStopDataset()
-  successfullRun = False
+
+  successfulRun = False
   errors = ""
 
   try:
     if "agencies" in sys.argv:
       updateCatalog()
-    elif "bus" in sys.argv:
+    if "resetBus" in sys.argv:
+      resetTransitStopDataset()
+    if "bus" in sys.argv:
       updateTransitStopDataset()
-    sucessfullRun = True
+    successfulRun = True
   except Exception as e:
-    errors = e
+    errors = str(e)
   
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   #print(json.dumps(CHANGE_LOG, indent=4))
@@ -678,7 +681,7 @@ def Main():
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
 
-  updatePrivateDataSet(True,errors)
+  updatePrivateDataSet(successfulRun,errors)
 
 Main()
 
