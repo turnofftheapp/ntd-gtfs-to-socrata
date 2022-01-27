@@ -611,21 +611,26 @@ def resetTransitStopDataset():
 
 
 def updatePrivateDataSet(successfullRun,errors):
+  with open('CHANGE_LOG.txt', 'r') as f:
+    logging = f
+    '''
   if successfullRun == True:
     logging = json.dumps(CHANGE_LOG, indent=4)
   else:
     logging = errors
-  
+  '''
   newRun = [
     {
-      'run_date': datetime.now().strftime("%Y-%m-%d"),
-      'run_successful': successfullRun,
-      'log': logging
+      "run_date": datetime.now().strftime("%Y-%m-%d"),
+      "run_successful": successfullRun,
+      "log": json.dumps(logging, indent=4)
     }
   ]
-  requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,newRun, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+  requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  pdb.set_trace()
 
 def Main():
+  '''
   successfullRun = False
   errors = ""
   try:
@@ -637,10 +642,11 @@ def Main():
 
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   print(json.dumps(CHANGE_LOG, indent=4))
+  
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
-  
-  updatePrivateDataSet(successfullRun,errors)
+  '''
+  updatePrivateDataSet(True,"")
 
 Main()
 
