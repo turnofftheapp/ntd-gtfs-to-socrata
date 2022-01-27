@@ -32,6 +32,9 @@ INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
 OMIT_BUS_COLUMN_VALUE = 'omit'
+PRIVATE_DATASET_LINK = "https://data.bts.gov/dataset/PRIVATE-NTM-Ingest-Script-Log/ngsm-beqg"
+PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
+
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -605,16 +608,39 @@ def resetTransitStopDataset():
           
     postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
     requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
-        
+
+
+def updatePrivateDataSet(successfullRun,errors):
+  if successfullRun == True:
+    logging = json.dumps(CHANGE_LOG, indent=4)
+  else:
+    logging = errors
+  
+  newRun = [
+    {
+      'run_date': datetime.now().strftime("%Y-%m-%d"),
+      'run_successful': successfullRun,
+      'log': logging
+    }
+  ]
+  requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,newRun, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
 
 def Main():
-  #resetTransitStopDataset()
-  updateCatalog()
-  updateTransitStopDataset()
+  successfullRun = False
+  errors = ""
+  try:
+    updateCatalog()
+    updateTransitStopDataset()
+    sucessfullRun = True
+  except Exception as e:
+    errors = e
+
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
   print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
+  
+  updatePrivateDataSet(successfullRun,errors)
 
 Main()
 
