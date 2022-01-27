@@ -59,20 +59,20 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
   thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   return thumbPrint
 
-# This funcitons checks if a gtfs link is reachable
+# Checks if the given URL is reachable and if so returns <GET request response object/data>, None
+# If URL has issues return: None, <error message>
 def urlIsValid(url,agencyFeedRow):
   try:
     get = requests.get(url)
-    if get.status_code == 200 or get.status_code == 201:
-      return get
+    if get.ok:
+      return get, None
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
-      updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
-      return None
-      
   except Exception as e:
-    updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=url)
-    return None
+    errorMessage = getattr(e, 'message', repr(e))
+    
+  updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=errorMessage,url=url)
+  return None, errorMessage
 
 '''
 # This function updates the standard portion of the change log due to the data coming from an agencyFeedRow as opposed to a catalogRow
@@ -388,13 +388,19 @@ def getMetadataUrlFieldIfExists(fieldName, agencyFeedRow):
 
   return agencyFeedRow[fieldName]
 
-def setMetadata(agencyFeedRow):
+def setMetadata(agencyFeedRow, fetchLinkErrorMessage):
+  gtfsUrlFieldValue = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
+  if gtfsUrlFieldValue == "":
+    gtfsUrlFieldValue = "No URL provided"
+  elif fetchLinkErrorMessage != None:
+    gtfsUrlFieldValue = "URL (" + gtfsUrlFieldValue + ") is invalid: " + fetchLinkErrorMessage
+
   description = "Agency Name: " + agencyFeedRow['agency_name'] + "\n"
   description += "NTD Name: " + getMetadataFieldIfExists('ntd_name', agencyFeedRow) + "\n"
   description += "NTD ID: " + agencyFeedRow['ntd_id'] + "\n"
   description += FEED_ID_PREFIX + agencyFeedRow['feed_id'] + "\n"
   description += "GTFS: " + getMetadataFieldIfExists('has_gtfs', agencyFeedRow) + "\n"
-  description += "GTFS URL: " + getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow) + "\n"
+  description += "GTFS URL: " + gtfsUrlFieldValue + "\n"
   description += "Agency URL: " + getMetadataUrlFieldIfExists('agency_website', agencyFeedRow) + "\n"
   description += "Region: " + getMetadataFieldIfExists('uza', agencyFeedRow) + "\n"
   description += "City: " + getMetadataFieldIfExists('city', agencyFeedRow) + "\n" # Update
@@ -427,11 +433,7 @@ def revision(fourfour, agencyFeedRow):
   print("revision was called")
   print(agencyFeedRow['agency_name'])
   fetchLinkZipFileUrl = getMetadataUrlFieldIfExists('fetch_link', agencyFeedRow)
-  urlResponseIfValid = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
-  # Skip uploading to catalog if ZIP file is not valid
-  if urlResponseIfValid == None: # This reports out on invalid GTFS urls
-    return None
-  
+  fetchLinkResponseIfValid,fetchLinkErrorMessage = urlIsValid(fetchLinkZipFileUrl, agencyFeedRow)
   
   ########
   ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
@@ -445,7 +447,7 @@ def revision(fourfour, agencyFeedRow):
     url_for_step_1_post = f'{revision_url}/{fourfour}'
   
   permission = 'private'
-  metadata = setMetadata(agencyFeedRow)
+  metadata = setMetadata(agencyFeedRow, fetchLinkErrorMessage)
   body = json.dumps({
     'metadata': metadata,
       'action': {
@@ -457,41 +459,43 @@ def revision(fourfour, agencyFeedRow):
   if fourfour == None:
     fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
     
-  create_source_uri = update_revision_response.json()['links']['create_source'] # It will also return the URL you need to create a source 
-  create_source_url = f'{DOMAIN_URL}{create_source_uri}'
-  
-  ##########################
-  ### Step 2: Create new source
-  ##########################
-  now = datetime.now().strftime("%Y-%m-%d")
-  filename = agencyFeedRow['ntd_id'] + " " + now + '.zip' 
-  revision_source_type = 'upload'
+  # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
+  if fetchLinkResponseIfValid != None:
+    ##########################
+    ### Step 2: Create new source
+    ##########################
+    create_source_uri = update_revision_response.json()['links']['create_source']
+    create_source_url = f'{DOMAIN_URL}{create_source_uri}'
 
-  parse_source = False
+    now = datetime.now().strftime("%Y-%m-%d")
+    filename = agencyFeedRow['ntd_id'] + " " + now + '.zip' 
+    revision_source_type = 'upload'
 
-  source_json = json.dumps({
-    'source_type': {
-      'type': revision_source_type,
-      'filename': filename
-    },
-    'parse_options': {
-      'parse_source': parse_source
-    }
-  })
-  
-  source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    parse_source = False
 
-  ##########################
-  ### Step 3: Upload File to source_type
-  ##########################
+    source_json = json.dumps({
+      'source_type': {
+        'type': revision_source_type,
+        'filename': filename
+      },
+      'parse_options': {
+        'parse_source': parse_source
+      }
+    })
+    
+    source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
-  bytes = urlResponseIfValid.content
-  upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
-  upload_url = f'{DOMAIN_URL}{upload_uri}'
-  upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+    ##########################
+    ### Step 3: Upload File to source_type
+    ##########################
+    bytes = fetchLinkResponseIfValid.content
+    upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+    upload_url = f'{DOMAIN_URL}{upload_uri}'
+    upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+
 
   #########
-  #Step 2a(5): Apply revisionHere you just apply your revision as you would if you were updating data.
+  #Step 4: Apply revision (publishes changes)
   #########
   apply_revision_uri = update_revision_response.json()['links']['apply']
   apply_revision_url = f'{DOMAIN_URL}{apply_revision_uri}'
