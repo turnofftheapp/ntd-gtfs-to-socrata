@@ -88,9 +88,7 @@ def updateChangeLog(agencyFeedRow, action, fourfour):
   '''
 
 def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
-  if entryThumbPrint['Fourfour'] == None:
-    dataLink = "No data link"
-  else:
+  if entryThumbPrint['Fourfour'] != None:
     dataLink = 'https://data.bts.gov/d/' + entryThumbPrint['Fourfour']
   changelogValue = [entryThumbPrint['Name'],dataLink]
   if action == CREATE_ACTION:
