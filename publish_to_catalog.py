@@ -321,8 +321,8 @@ def updateTransitStopDataset():
     if notThere:
       continue
     '''
-    if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
-    #if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
+    #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
+    if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryZip = getZipUrl(catalogRow['description'])
       if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
         print(catalogRow['name'])
