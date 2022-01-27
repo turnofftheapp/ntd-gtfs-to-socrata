@@ -294,11 +294,6 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
   
   return requestResults
 
-  # query stops data for all stop records associated with the given existingFeedID (do a where query https://dev.socrata.com/docs/queries/where.html)
-  # identify deletions by comparing each stopsObject stop to each record returned from query
-  # iff rows to delete > 0
-    # do request to make those deletions (https://dev.socrata.com/publishers/soda-producer/direct-row-manipulation.html)
-
 # This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
 # busStopEntry in the catalog, that busStop is added
 # updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to
@@ -604,7 +599,7 @@ def Main():
   #updateCatalog()
   updateTransitStopDataset()
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry for test purposes
-  
+
   print(json.dumps(CHANGE_LOG, indent=4))
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
