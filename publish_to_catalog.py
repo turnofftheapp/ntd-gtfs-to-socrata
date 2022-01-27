@@ -9,6 +9,7 @@ from datetime import datetime
 import zipfile
 from zipfile import ZipFile
 import csv
+import sys
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
@@ -35,6 +36,7 @@ OMIT_BUS_COLUMN_VALUE = 'omit'
 PRIVATE_DATASET_LINK = "https://data.bts.gov/dataset/PRIVATE-NTM-Ingest-Script-Log/ngsm-beqg"
 PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
 BUS_UPSERT_ERROR = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+
 
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
@@ -656,12 +658,16 @@ def updatePrivateDataSet(successfullRun,errors):
   pdb.set_trace()
 
 def Main():
+  pdb.set_trace()
   #resetTransitStopDataset()
   successfullRun = False
   errors = ""
+
   try:
-    updateCatalog()
-    updateTransitStopDataset()
+    if "agencies" in sys.argv:
+      updateCatalog()
+    elif "bus" in sys.argv:
+      updateTransitStopDataset()
     sucessfullRun = True
   except Exception as e:
     errors = e
