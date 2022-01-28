@@ -35,6 +35,7 @@ TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which h
 OMIT_BUS_COLUMN_VALUE = 'omit'
 KEEP_STOP = 'keep stop'
 DELETE_STOP = 'delete stop'
+TEMPZIP_FILENAME = 'temp-gtfs.zip'
 
 INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
@@ -304,9 +305,9 @@ def updateTransitStopDataset():
         catalogRowThumbPrint = getCatalogThumbPrint(catalogRow)
         try:
           zipRequest = requests.get(catalogEntryFetchLink)
-          with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
+          with open(TEMPZIP_FILENAME, "wb") as zip:
             zip.write(zipRequest.content)
-          z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
+          z = zipfile.ZipFile(TEMPZIP_FILENAME, "r")
           stopFile = z.read("stops.txt")
         except Exception as e:
           updateChangeLog(catalogRowThumbPrint, INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryFetchLink)
@@ -340,8 +341,6 @@ def updateTransitStopDataset():
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
             print("Exception when upserting stop locations from " + catalogRow['name'] + ": " + str(e))
-        
-        os.remove(os.getcwd()+"/tempzip.zip")
 
         updatedRequestResults = deleteIfNecessary(catalogRowThumbPrint, stopsObject, requestResults)
 
@@ -355,6 +354,9 @@ def updateTransitStopDataset():
         else:
           upsertErrorMsg = "Error upserting stop locations, status_code: " + str(postCatalogEntryBusStopsRequest.status_code)
           updateChangeLog(catalogRowThumbPrint, BUS_UPSERT_FAIL_ACTION, Message=upsertErrorMsg, busNumbers=busLineDict)
+
+  # Delete temporary ZIP file
+  os.remove(TEMPZIP_FILENAME)
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if fieldName in agencyFeedRow:
