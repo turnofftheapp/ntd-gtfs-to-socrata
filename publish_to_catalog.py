@@ -37,13 +37,16 @@ PRIVATE_DATASET_LINK = "https://data.bts.gov/dataset/PRIVATE-NTM-Ingest-Script-L
 PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
 BUS_UPSERT_ERROR = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
 
-
+AGENCIES_WITH_UPSERTED_BUS_STOPS = 0
+AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = 0
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
+
+
 
 # This function takes in a catalog entry and returns its "thumbprint" that can be used to update the changelog
 def getCatalogThumbPrint(catalogRow):
@@ -304,6 +307,7 @@ def updateTransitStopDataset():
         except Exception as e:
           #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
           updateChangeLog(getCatalogThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
+          AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = AGENCIES_WITH_NO_UPSERTED_BUS_STOPS + 1
           print(getattr(e, 'message', repr(e)))
           #os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
@@ -354,8 +358,10 @@ def updateTransitStopDataset():
         if not postCatalogEntryBusStopsRequest.ok:
           print("Error upserting bus stops")
           pdb.set_trace()
-          requestResults = BUS_UPSERT_ERROR
+          AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = AGENCIES_WITH_NO_UPSERTED_BUS_STOPS + 1
+          requestResults = getattr(e, 'message', repr(e))
         else:
+          AGENCIES_WITH_UPSERTED_BUS_STOPS = AGENCIES_WITH_UPSERTED_BUS_STOPS + 1
           print("________________________________OKAY!___________________________")
         # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
         print("with catalogRow")
@@ -455,8 +461,8 @@ def revision(fourfour, agencyFeedRow):
         'permission': permission
       }
   })
-  #update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=_HEADERS, auth=CREDENTIALS)
+  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  #update_revision_response = requests.post(url_for_step_1_post, data=body, headers=_HEADERS, auth=CREDENTIALS)
   if fourfour == None:
     fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
     
@@ -566,6 +572,7 @@ def updateCatalog():
           if revision_response != None:
             #updateChangeLog(agencyFeedRow,CREATE_ACTION,None)
             updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
+
           
         else:
           print("replacing") 
@@ -620,6 +627,8 @@ def stringifyBusErrors(dict):
   #changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
   newString = ""
   for key,value in dict.items():
+    print("buss error search")
+    pdb.set_trace() #need to figure out how to identify successfull bus upsertions and skip those to add the others below
     if value[2] == BUS_UPSERT_ERROR:
       nameAndID = key.split("_")
       id = nameAndID[0]
@@ -633,16 +642,29 @@ def stringifyInvalidURLs(dict):
     newString = newString + value[0] + " (" + key  + "): " + value[3] + " (Fetch Link: " + value[1] + ")" + "\n\n"
   return newString
 
+# This function builds out the script stats that get sent to the private dataset
+def fillScriptStats():
+  scriptStats = {'Agencies Created': len(DATA_CREATED.keys()) , 'Agencies Updated': len(DATA_UPDATED.keys()), 'Agencies With Upserted Bus Stops': AGENCIES_WITH_UPSERTED_BUS_STOPS, 'Agencies With No Upserted Bus Stops': AGENCIES_WITH_NO_UPSERTED_BUS_STOPS}
+  return scriptStats
+
+def stringifyStats(dict):
+  newString = ""
+  for key,value in dict.items():
+    newString = newString + key + ": " + value + "\n"
+  return newString
+
 
 def convertChangeLogForPrivateDataset():
   invalidString = stringifyInvalidURLs(CHANGE_LOG["Invalid GTFS URLs"])
   upsertErrorString = stringifyBusErrors(CHANGE_LOG["Bus stop upsertion attempts"])
-  final = invalidString + "\n" + upsertErrorString
+  stats = fillScriptStats()
+  statsString = stringifyStats(stats)
+  final = statsString + "\n\n" + invalidString + "\n\n" + upsertErrorString
   pdb.set_trace()
   return final
 
 def updatePrivateDataSet(successfullRun,errors):
-
+  pdb.set_trace()
   if successfullRun == True:
     logging = convertChangeLogForPrivateDataset()
   else:
@@ -650,7 +672,7 @@ def updatePrivateDataSet(successfullRun,errors):
   
   newRun = [
     {
-      "run_date": datetime.now().strftime("%Y-%m-%d"),
+      "run_date": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
       "run_successful": successfullRun,
       "log": logging
     }
