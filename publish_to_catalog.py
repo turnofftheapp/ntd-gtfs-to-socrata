@@ -13,7 +13,6 @@ import sys
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
-APP_TOKEN = {'X-APP-Token': 'FvuD9i0QMVotyBS8KxUOT5CvE'}
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
@@ -286,7 +285,7 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
   
   stopsToDelete = locateDeletions(catalogRowThumbPrint, stopsObject)
   if len(stopsToDelete) > 0:
-    deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), {}, headers=STANDARD_HEADERS, auth=CREDENTIALS)
     #requestResults = requestResults + "\n" + deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].replace('"','')
     requestResults['Rows Deleted'] = int(deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].split(":")[1])
   
@@ -337,11 +336,11 @@ def updateTransitStopDataset():
             invalidLines = invalidLines + newStopLine['line']
 
         try:
-          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, {}, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         except Exception as e:
           try:
-            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), {}, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
             print("Exception when upserting stop locations from " + catalogRow['name'] + ": " + str(e))
@@ -553,7 +552,7 @@ def updateLogDataset(successfullRun, errors):
       "log": logging
     }
   ]
-  requestResults = requests.post(LOG_DATASET_ENDPOINT, json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  requestResults = requests.post(LOG_DATASET_ENDPOINT, json.dumps(newRun), {}, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
 
 def Main():
