@@ -73,6 +73,17 @@ def urlIsValid(url):
 
   return None, errorMessage
 
+# From: https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45
+def urlIsValidStatic(url):
+  urlRegex = re.compile(
+    r'^(?:http|ftp)s?://' # http:// or https://
+    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
+    r'localhost|' #localhost...
+    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
+    r'(?::\d+)?' # optional port
+    r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+  return (re.match(urlRegex, url) is not None)
+
 def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
   if action == CREATE_ACTION:
     DATA_CREATED[entryThumbPrint['FeedID']] = [
@@ -99,7 +110,7 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
 
 
 # Parses the GTFS zip file link out of the decodedMetadata
-def getZipUrl(description):
+def getFetchLinkUrl(description):
   locateLogic = re.compile('\\nGTFS URL: .*\\nAgency URL:')
   locateResult = locateLogic.search(description)
   if locateResult == None:
@@ -135,12 +146,6 @@ def makeStopsObject(bytes):
     stopsObject[header] = []
   i=0
   while i < len(lineList):
-    ''' #This little if statement was strictly for simulating a stops.txt file that had less rows than the last time it was upserted
-    if i>1 and i<5: #Skipping 2-4 to test deletions
-      print(clearWhiteSpaces(lineList[i].split(",")))
-      i += 1
-      continue
-    '''
     j=0
     stopAsList = clearWhiteSpaces(lineList[i].split(","))
     if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
@@ -149,7 +154,6 @@ def makeStopsObject(bytes):
         j+=1
     i += 1
   return stopsObject
-
 
 
 # This function just gets rid of leading and trailing white spaces and quotes from a possible lat or lon
@@ -286,39 +290,26 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
 # updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to
 # the bus stop data.
 def updateTransitStopDataset():
-  print("upserting stops was called")
-  # The below for loop iterates through the existing catalog, identifying entrys that we deal with in order to get their bus stop data
-  # and add that data to the catalog bus stop data
-  
-  '''
-  notThere = True
-  counter = 0
-  '''
   for catalogRow in CURRENT_CATALOG: 
-    '''
-    counter+=1
-    print(counter)
-    if catalogRow['name'] == 'NTM: Massachusetts Bay Transportation Authority':
-      notThere = False
-    if notThere:
-      continue
-    '''
     #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
-      catalogEntryZip = getZipUrl(catalogRow['description'])
-      if catalogEntryZip != None: #needed this if statement because some agencies were starting to use the "national transit map" tag
-        print(catalogRow['name'])
+      catalogEntryFetchLink = getFetchLinkUrl(catalogRow['description'])
+
+      # Skip invalid URLs or cases where GTFS URL was not found in dataset description
+      if catalogEntryFetchLink != None and urlIsValidStatic(catalogEntryFetchLink):
+        print("Upserting stop locations from " + catalogRow['name'])
+
         # The below zipRequest contains multiple files. The stops.txt file must be gotten out of the content of this request
         # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
         catalogRowThumbPrint = getCatalogThumbPrint(catalogRow)
         try:
-          zipRequest = requests.get(catalogEntryZip)
+          zipRequest = requests.get(catalogEntryFetchLink)
           with open(os.getcwd()+"/tempzip.zip", "wb") as zip:
             zip.write(zipRequest.content)
           z = zipfile.ZipFile(os.getcwd()+"/tempzip.zip", "r")
           stopFile = z.read("stops.txt")
         except Exception as e:
-          updateChangeLog(catalogRowThumbPrint, INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
+          updateChangeLog(catalogRowThumbPrint, INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryFetchLink)
           continue
 
         stopsObject = makeStopsObject(stopFile)
@@ -348,7 +339,7 @@ def updateTransitStopDataset():
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
-            print(e)
+            print("Exception when upserting stop locations from " + catalogRow['name'] + ": " + str(e))
         
         os.remove(os.getcwd()+"/tempzip.zip")
 
@@ -360,7 +351,8 @@ def updateTransitStopDataset():
         busLineDict['invalid lines'] = lineCount - validLineCount
         
         if not postCatalogEntryBusStopsRequest.ok:
-          requestResults = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
+          requestResults = "Error upserting stop locations from " + catalogRow['name'] + ", status_code: " + str(postCatalogEntryBusStopsRequest.status_code)
+
         updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=updatedRequestResults,busNumbers=busLineDict)
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -439,8 +431,6 @@ def revision(fourfour, agencyFeedRow):
       }
   })
   update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  if fourfour == None:
-    fourfour = update_revision_response.json()['resource']['fourfour'] # Creating a new revision will return the 4x4 for your new dataset
     
   # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
   if fetchLinkResponseIfValid != None:
