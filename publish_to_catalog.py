@@ -36,8 +36,6 @@ OMIT_BUS_COLUMN_VALUE = 'omit'
 KEEP_STOP = 'keep stop'
 DELETE_STOP = 'delete stop'
 
-
-# The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
 BUS_STOPS_NOT_UPSERTED = {}
@@ -506,9 +504,8 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def updateCatalog():
-  
   api_request = "https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json"
-  api_request += "?$where=have_consent_for_ntm=True" # Filter to only import feeds where original_consent_declined field is FALSE
+  api_request += "?$where=have_consent_for_ntm=True" # Filter to only import feeds where Consent field is TRUE
 
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
   agencyFeedResponse = requests.get(api_request, headers=STANDARD_HEADERS, auth=CREDENTIALS)
@@ -523,47 +520,6 @@ def updateCatalog():
       revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
       if revision_response != None:
         updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
-
-# This function can be run by itsself in order to clear out the busstop data from the bus stop entry in the socrata database
-def resetTransitStopDataset():  
-  with open(os.getcwd()+"/stopsStarter.txt", 'r') as file:
-    stopFile = csv.reader(file)
-    stopslist = [] #list of lists
-    for line in stopFile:
-      stopslist.append(line)
-    headers = stopslist[0]
-    stopsObject = {}
-    for header in headers:
-      stopsObject[header] = []
-    i=0
-    while i < len(stopslist):
-      j=0
-      stopAsList = stopslist[i]
-      if len(stopAsList) > 1: #last items in the list seemed to be empty and were throwing an error
-        for header in headers:
-          stopsObject[header].append(stopAsList[j])
-          j+=1
-      i += 1
-    existingFeedID =  '00009'
-    newStopData = ""
-    lineCount = 0 # This includes the header!
-    validLineCount = 0 # This includes the header!
-    invalidLines = "" 
-    while lineCount < len(stopsObject['stop_lat']):
-      newStopLine = makeStopLine(lineCount,existingFeedID,stopsObject)
-      lineCount += 1
-
-      if lineCount == 1: # Adding header to the invalid lines data
-        invalidLines = invalidLines + newStopLine['line']
-
-      if newStopLine[TO_INVALID_RECORD] == False: #if it is a valid line
-        newStopData = newStopData + newStopLine['line']
-        validLineCount += 1 
-      else:
-        invalidLines = invalidLines + newStopLine['line']
-          
-    postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-    requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
 def stringifyErrorLines(logDict):
   errorLines = ""
