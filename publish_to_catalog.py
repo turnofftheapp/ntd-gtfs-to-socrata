@@ -9,6 +9,7 @@ from datetime import datetime
 import zipfile
 from zipfile import ZipFile
 import csv
+import sys
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
@@ -564,14 +565,53 @@ def resetTransitStopDataset():
     postCatalogEntryBusStopsRequest = requests.put(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
     requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         
+def stringifyErrorLines(logDict):
+  errorLines = ""
+  for feedID,errorInfo in logDict.items():
+    errorLines += feedID + ": " + str(errorInfo) + "\n\n"
+  return errorLines
+
+def getLogsForLogDataset():
+  statsLines =  f'Agencies Created: {len(DATA_CREATED.keys())}'
+  statsLines += f'Agencies Updated: {len(DATA_UPDATED.keys())}'
+  statsLines += f'Agencies With Upserted Bus Stops: {len(BUS_STOPS_UPSERTED.keys())}'
+  statsLines += f'Agencies Failed Upserted Bus Stops: {len(BUS_STOPS_NOT_UPSERTED.keys())}'
+  return statsLines + "\n\n" + stringifyErrorLines(CHANGE_LOG["Invalid GTFS URLs"]) + "\n\n" + stringifyErrorLines(CHANGE_LOG["Unsuccessfull bus stop upserts"])
+
+def updateLogDataset(successfullRun, errors):
+  if successfullRun == True:
+    logging = getLogsForLogDataset()
+  else:
+    logging = errors
+
+  newRun = [
+    {
+      "run_date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
+      "run_successful": successfullRun,
+      "log": logging
+    }
+  ]
+  requestResults = requests.post(PRIVATE_DATASET_ENDPOINT, json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+
 
 def Main():
-  #updateCatalog()
-  updateTransitStopDataset()
-  #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry for test purposes
+  successfulRun = True
+  errors = ""
+
+  try:
+    if "catalog" in sys.argv:
+      updateCatalog()
+    if "stops_map" in sys.argv:
+      updateTransitStopDataset()
+  except Exception as e:
+    successfulRun = False
+    errors = str(e)
+
+  updateLogDataset(successfulRun,errors)
 
   with open('CHANGE_LOG.txt', 'w') as f:
     f.write(json.dumps(CHANGE_LOG, indent=4))
+  
 
 Main()
 
