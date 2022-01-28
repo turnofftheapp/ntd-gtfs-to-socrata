@@ -29,22 +29,23 @@ ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
+BUS_UPSERT_FAIL_ACTION = 'bus stops failed to upsert'
 INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
 OMIT_BUS_COLUMN_VALUE = 'omit'
 PRIVATE_DATASET_LINK = "https://data.bts.gov/dataset/PRIVATE-NTM-Ingest-Script-Log/ngsm-beqg"
 PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
-BUS_UPSERT_ERROR = 'There was an error upserting stops from this catalog entry. There were 0 upsertions from this entry.'
 
-AGENCIES_WITH_UPSERTED_BUS_STOPS = 0
-AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = 0
+
+
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
+BUS_STOPS_NOT_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
-CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
+CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS, "Unsuccessfull bus stop upserts": BUS_STOPS_NOT_UPSERTED}
 
 
 
@@ -115,6 +116,10 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
     feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
     changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
     BUS_STOPS_UPSERTED[feedID_name] = changelogValue
+  elif action == BUS_UPSERT_FAIL_ACTION:
+    feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
+    changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
+    BUS_STOPS_NOT_UPSERTED[feedID_name] = changelogValue
   elif action == INVALID_URL_ACTION:
     changelogValue = [
       entryThumbPrint['Name'],
@@ -307,7 +312,7 @@ def updateTransitStopDataset():
         except Exception as e:
           #updateInvalidUrlLog(catalogRow,catalogEntryZip, getattr(e, 'message', repr(e)))
           updateChangeLog(getCatalogThumbPrint(catalogRow), INVALID_URL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip)
-          AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = AGENCIES_WITH_NO_UPSERTED_BUS_STOPS + 1
+          updateChangeLog(getCatalogThumbPrint(catalogRow), BUS_UPSERT_FAIL_ACTION, Message=getattr(e, 'message', repr(e)),url=catalogEntryZip) 
           print(getattr(e, 'message', repr(e)))
           #os.remove(os.getcwd()+"/tempzip.zip") # If aborting this iteration, we will get rid of the zip file locally
           continue
@@ -341,8 +346,6 @@ def updateTransitStopDataset():
             postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), APP_TOKEN, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
-            print("heyhey")
-            pdb.set_trace()
             print(e)
         
         os.remove(os.getcwd()+"/tempzip.zip")
@@ -350,22 +353,18 @@ def updateTransitStopDataset():
         busLineDict['total stops.txt lines'] = lineCount - 1 # Minus 1 to account for the header
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
-        # The below determines how to update the busStop portion of the change log based on the status of postCatalogEntryBusStopsRequest
+        
         strLineCount = str(lineCount)
         strValidLineCount = str(validLineCount)
 
         print("script found "+strLineCount+" lines which included " + strValidLineCount + " valid lines.")
         if not postCatalogEntryBusStopsRequest.ok:
           print("Error upserting bus stops")
-          pdb.set_trace()
-          AGENCIES_WITH_NO_UPSERTED_BUS_STOPS = AGENCIES_WITH_NO_UPSERTED_BUS_STOPS + 1
           requestResults = getattr(e, 'message', repr(e))
+          updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_FAIL_ACTION,Message=requestResults,busNumbers=busLineDict)
         else:
-          AGENCIES_WITH_UPSERTED_BUS_STOPS = AGENCIES_WITH_UPSERTED_BUS_STOPS + 1
           print("________________________________OKAY!___________________________")
-        # @TODO: record a log entry for bus stops that includes total number of lines in the stops.txt file plus the total number of rows updated or created from requestResults. These numbers should be equal but it will be good to see if they are not in order to investigate potential data issues.
-        print("with catalogRow")
-        updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
+          updateChangeLog(getCatalogThumbPrint(catalogRow),BUS_UPSERT_ACTION,Message=requestResults,busNumbers=busLineDict)
           
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
@@ -627,13 +626,11 @@ def stringifyBusErrors(dict):
   #changelogValue = [entryThumbPrint['Name'],dataLink,Message,busNumbers]
   newString = ""
   for key,value in dict.items():
-    print("buss error search")
-    pdb.set_trace() #need to figure out how to identify successfull bus upsertions and skip those to add the others below
-    if value[2] == BUS_UPSERT_ERROR:
-      nameAndID = key.split("_")
-      id = nameAndID[0]
-      name = nameAndID[1]
-      newString = newString + name + " (" + id  + "): " + value[2] + " (Fetch Link: " + value[1] + ")" + "\n\n"
+    
+    nameAndID = key.split("_")
+    id = nameAndID[0]
+    name = nameAndID[1]
+    newString = newString + name + " (" + id  + "): " + value[2] + " (Fetch Link: " + value[1] + ")" + "\n\n"
   return newString
 
 def stringifyInvalidURLs(dict):
@@ -642,29 +639,24 @@ def stringifyInvalidURLs(dict):
     newString = newString + value[0] + " (" + key  + "): " + value[3] + " (Fetch Link: " + value[1] + ")" + "\n\n"
   return newString
 
-# This function builds out the script stats that get sent to the private dataset
-def fillScriptStats():
-  scriptStats = {'Agencies Created': len(DATA_CREATED.keys()) , 'Agencies Updated': len(DATA_UPDATED.keys()), 'Agencies With Upserted Bus Stops': AGENCIES_WITH_UPSERTED_BUS_STOPS, 'Agencies With No Upserted Bus Stops': AGENCIES_WITH_NO_UPSERTED_BUS_STOPS}
-  return scriptStats
 
 def stringifyStats(dict):
   newString = ""
   for key,value in dict.items():
-    newString = newString + key + ": " + value + "\n"
+    newString = newString + key + ": " + str(value) + "\n"
   return newString
 
 
 def convertChangeLogForPrivateDataset():
   invalidString = stringifyInvalidURLs(CHANGE_LOG["Invalid GTFS URLs"])
-  upsertErrorString = stringifyBusErrors(CHANGE_LOG["Bus stop upsertion attempts"])
-  stats = fillScriptStats()
+  upsertErrorString = stringifyBusErrors(CHANGE_LOG["Unsuccessfull bus stop upserts"])
+  stats = {'Agencies Created': len(DATA_CREATED.keys()) , 'Agencies Updated': len(DATA_UPDATED.keys()), 'Agencies With Upserted Bus Stops': len(BUS_STOPS_UPSERTED.keys()) , 'Agencies With No Upserted Bus Stops': len(BUS_STOPS_NOT_UPSERTED.keys()) }
   statsString = stringifyStats(stats)
   final = statsString + "\n\n" + invalidString + "\n\n" + upsertErrorString
   pdb.set_trace()
   return final
 
 def updatePrivateDataSet(successfullRun,errors):
-  pdb.set_trace()
   if successfullRun == True:
     logging = convertChangeLogForPrivateDataset()
   else:
@@ -672,11 +664,12 @@ def updatePrivateDataSet(successfullRun,errors):
   
   newRun = [
     {
-      "run_date": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+      "run_date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
       "run_successful": successfullRun,
       "log": logging
     }
   ]
+  print("at the last request")
   pdb.set_trace()
   requestResults = requests.post(PRIVATE_DATASET_ENDPOINT,json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   pdb.set_trace()
@@ -695,6 +688,7 @@ def Main():
       updateTransitStopDataset()
     successfulRun = True
   except Exception as e:
+    pdb.set_trace()
     errors = str(e)
   
   #resetTransitStopDataset() # Only uncomment this line when you want to clear out the stops entry in socrata
