@@ -12,9 +12,6 @@ import csv
 
 
 CREDENTIALS = (os.environ['SOCRATA_BTS_USERNAME'], os.environ['SOCRATA_BTS_PASSWORD']) 
-# I know it is bad practice to hard code passwords into a file, but since other people are going to
-# be using this in the future, shouldn't we be including it in here so that every employee who uses 
-# this doesn't need to add a new environment variable?
 APP_TOKEN = {'X-APP-Token': 'FvuD9i0QMVotyBS8KxUOT5CvE'}
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
@@ -291,7 +288,6 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
 # the bus stop data.
 def updateTransitStopDataset():
   for catalogRow in CURRENT_CATALOG: 
-    #if catalogRow['name'] == "NTM: TEST: Pierce Transit" or catalogRow['name'] == "NTM: TEST: Confederated Tribes of the Colville Indian Reservation" or catalogRow['name'] == "NTM: TEST: Yakima Transit":
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryFetchLink = getFetchLinkUrl(catalogRow['description'])
 
@@ -409,7 +405,8 @@ def revision(fourfour, agencyFeedRow):
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fetchLinkErrorMessage, url=fetchLinkZipFileUrl)
   
   ########
-  ### Step 1a: Create new revisionIn this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
+  ### Step 1a: Create new revision
+  ### In this step you will want to put the metadata you'd like to update in JSON format along with the action you'd like to take This sample shows the default public metadata fields, but you can also update custom and private metadata here.
   ########
   revision_url = f'{DOMAIN_URL}/api/publishing/v1/revision'
   if fourfour == None:
