@@ -22,9 +22,12 @@ CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is th
 CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89'
 ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
+PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
+
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
+BUS_UPSERT_FAIL_ACTION = 'bus stops failed to upsert'
 INVALID_URL_ACTION = 'record invalid url'
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
@@ -36,9 +39,10 @@ DELETE_STOP = 'delete stop'
 # The below will be the change log that is emailed out once the script is finished running
 INVALID_URLS = {}
 BUS_STOPS_UPSERTED = {}
+BUS_STOPS_NOT_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
-CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS}
+CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS, "Unsuccessfull bus stop upserts": BUS_STOPS_NOT_UPSERTED}
 
 # This function takes in a catalog entry and returns its "thumbprint" that can be used to update the changelog
 def getCatalogThumbPrint(catalogRow):
@@ -92,8 +96,13 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
       "https://data.bts.gov/d/" + entryThumbPrint['Fourfour']
     ]
   elif action == BUS_UPSERT_ACTION:
-    feedID_name = entryThumbPrint['FeedID'] + "_" + entryThumbPrint['Name']
-    BUS_STOPS_UPSERTED[feedID_name] = [
+    BUS_STOPS_UPSERTED[entryThumbPrint['FeedID']] = [
+      entryThumbPrint['Name'],
+      Message,
+      busNumbers
+    ]
+  elif action == BUS_UPSERT_FAIL_ACTION:
+    BUS_STOPS_NOT_UPSERTED[entryThumbPrint['FeedID']] = [
       entryThumbPrint['Name'],
       Message,
       busNumbers
@@ -226,9 +235,6 @@ def makeStopLine(stopFileLine,feedID,stopsObject):
       stopDict['line'] = stopDict['line'] + field + ","
   stopDict['line'] = stopDict['line'][:-1] + "\n" #removes the comma most recently added before putting the newline character
 
-  
-  #stopDict['line'] = feed_id_stop_id +',' + stopCode +',' + stopName +',' + stopID + ',' + stopLat + ',' + stopLon + ',' + stopZoneID +',' + locationType +',' + stopLocation +"\n"
-  
   # TODO make the below check more rigorous. Alot of upsertions are failing because some lat and longs are random english that was probably meant to be in some other field
   if stopFileLine != 0: # If stop==0, then it is the header row and wont need to go through these checks
     if not validateCoordinates(stopLat,stopLon):
@@ -284,8 +290,7 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
 
 # This scans the current catalog, and for each entry, looks for busStop data, and if any stops are not already in the 
 # busStopEntry in the catalog, that busStop is added
-# updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to
-# the bus stop data.
+# updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to the bus stop data.
 def updateTransitStopDataset():
   for catalogRow in CURRENT_CATALOG: 
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
@@ -346,10 +351,11 @@ def updateTransitStopDataset():
         busLineDict['valid lines'] = validLineCount -1 # Minus 1 to account for the header
         busLineDict['invalid lines'] = lineCount - validLineCount
         
-        if not postCatalogEntryBusStopsRequest.ok:
-          requestResults = "Error upserting stop locations from " + catalogRow['name'] + ", status_code: " + str(postCatalogEntryBusStopsRequest.status_code)
-
-        updateChangeLog(catalogRowThumbPrint,BUS_UPSERT_ACTION,Message=updatedRequestResults,busNumbers=busLineDict)
+        if postCatalogEntryBusStopsRequest.ok:
+          updateChangeLog(catalogRowThumbPrint, BUS_UPSERT_ACTION, Message=updatedRequestResults, busNumbers=busLineDict)
+        else:
+          upsertErrorMsg = "Error upserting stop locations, status_code: " + str(postCatalogEntryBusStopsRequest.status_code)
+          updateChangeLog(catalogRowThumbPrint, BUS_UPSERT_FAIL_ACTION, Message=upsertErrorMsg, busNumbers=busLineDict)
 
 def getMetadataFieldIfExists(fieldName, agencyFeedRow):
   if fieldName in agencyFeedRow:
