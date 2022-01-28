@@ -17,13 +17,13 @@ APP_TOKEN = {'X-APP-Token': 'FvuD9i0QMVotyBS8KxUOT5CvE'}
 STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
-AGENCY_FEED_DATASET_ID = "dw2s-2w2x" # Test dataset with 3 rows 
-#AGENCY_FEED_DATASET_ID = "ymsd-c3s5" # Final dataset with all rows
-CURRENT_CATALOG_LINK = "https://data.bts.gov/api/views/metadata/v1" # This is the link to all sets in the NTD catalog
-CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_LINK + ".json", headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
-ALL_STOP_LOCATIONS_DATASET_LINK = 'https://data.bts.gov/dataset/National-Transit-Map-All-Stop-Locations/39cr-5x89'
-ALL_STOP_LOCATIONS_ENDPOINT = 'https://data.bts.gov/resource/39cr-5x89'
-PRIVATE_DATASET_ENDPOINT = "https://data.bts.gov/resource/ngsm-beqg"
+
+AGENCY_FEED_TEST_DATASET_ID = 'dw2s-2w2x' # Test dataset with 3 rows 
+AGENCY_FEED_ALL_DATASET_ID = 'ymsd-c3s5'  # All NTM agency records
+AGENCY_FEED_DATASET_ID = AGENCY_FEED_TEST_DATASET_ID
+
+ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
+LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
 
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
@@ -43,6 +43,10 @@ BUS_STOPS_NOT_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS, "Unsuccessfull bus stop upserts": BUS_STOPS_NOT_UPSERTED}
+
+# Query for all datasets in the entire catalog
+CURRENT_CATALOG_QUERY = DOMAIN_URL + "/api/views/metadata/v1.json" 
+CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_QUERY, headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 
 # This function takes in a catalog entry and returns its "thumbprint" that can be used to update the changelog
 def getCatalogThumbPrint(catalogRow):
@@ -93,7 +97,7 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
   elif action == UPDATE_ACTION:
     DATA_UPDATED[entryThumbPrint['FeedID']] = [
       entryThumbPrint['Name'],
-      "https://data.bts.gov/d/" + entryThumbPrint['Fourfour']
+      DOMAIN_URL + "/d/" + entryThumbPrint['Fourfour']
     ]
   elif action == BUS_UPSERT_ACTION:
     BUS_STOPS_UPSERTED[entryThumbPrint['FeedID']] = [
@@ -506,7 +510,7 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def updateCatalog():
-  api_request = "https://data.bts.gov/resource/" + AGENCY_FEED_DATASET_ID + ".json"
+  api_request = DOMAIN_URL + "/resource/" + AGENCY_FEED_DATASET_ID + ".json"
   api_request += "?$where=have_consent_for_ntm=True" # Filter to only import feeds where Consent field is TRUE
 
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
@@ -549,7 +553,7 @@ def updateLogDataset(successfullRun, errors):
       "log": logging
     }
   ]
-  requestResults = requests.post(PRIVATE_DATASET_ENDPOINT, json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  requestResults = requests.post(LOG_DATASET_ENDPOINT, json.dumps(newRun), APP_TOKEN, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
 
 def Main():
