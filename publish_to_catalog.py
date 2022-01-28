@@ -19,7 +19,7 @@ DOMAIN_URL = 'https://data.bts.gov'
 
 AGENCY_FEED_TEST_DATASET_ID = 'dw2s-2w2x' # Test dataset with 3 rows 
 AGENCY_FEED_ALL_DATASET_ID = 'ymsd-c3s5'  # All NTM agency records
-AGENCY_FEED_DATASET_ID = AGENCY_FEED_TEST_DATASET_ID
+AGENCY_FEED_DATASET_ID = AGENCY_FEED_ALL_DATASET_ID
 
 ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
 LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
@@ -428,7 +428,7 @@ def revision(fourfour, agencyFeedRow):
     url_for_step_1_post = f'{revision_url}/{fourfour}'
     print("Updating dataset for " + agencyFeedRow['agency_name'] + " (" + url_for_step_1_post + ")")
 
-  permission = 'private'
+  permission = 'public'
   metadata = setMetadata(agencyFeedRow, fetchLinkErrorMessage)
   body = json.dumps({
     'metadata': metadata,
