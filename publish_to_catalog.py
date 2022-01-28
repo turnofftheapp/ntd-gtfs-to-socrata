@@ -295,6 +295,10 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
 # busStopEntry in the catalog, that busStop is added
 # updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to the bus stop data.
 def updateTransitStopDataset():
+  # Since the global variable CURRENT_CATALOG was first created before any revisions were posted to the catalog, it doesn't contain
+  # any of the newly created datasets that were created during the current running of this script. So, we must "refresh" the
+  # catalog by reseting it with the same get request after the updateCatalog() function has run and brought in any new socrata datasets.
+  CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_QUERY, headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
   for catalogRow in CURRENT_CATALOG: 
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryFetchLink = getFetchLinkUrl(catalogRow['description'])
