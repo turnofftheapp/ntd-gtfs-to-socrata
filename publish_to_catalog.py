@@ -556,16 +556,20 @@ def updateLogDataset(successfullRun, errors):
 
 
 def Main():
-  successfulRun = True
+  successfulRun = False
   errors = ""
-
+  
   try:
     if "catalog" in sys.argv:
       updateCatalog()
-    if "stops_map" in sys.argv:
+      successfulRun = True
+    elif "stops_map" in sys.argv:
       updateTransitStopDataset()
+      successfulRun = True
+    else:
+      errors = "You must pass either 'catalog' or 'stops_map' as the argument"
+      print(errors)
   except Exception as e:
-    successfulRun = False
     errors = str(e)
 
   updateLogDataset(successfulRun,errors)
