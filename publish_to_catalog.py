@@ -30,6 +30,8 @@ CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
 BUS_UPSERT_FAIL_ACTION = 'bus stops failed to upsert'
 INVALID_URL_ACTION = 'record invalid url'
+ERROR_ACTION = 'error'
+
 FEED_ID_PREFIX = "Feed ID: " # This is saved as part of the catalog entry description and allows identifying if a dataset for a given Agency Feed already exists in the Socrata catalog
 TO_INVALID_RECORD = 'To invalid record' #This is the key to a dictionary which holds a boolean which labels a bus stops line in a stops.txt file as valid or not
 OMIT_BUS_COLUMN_VALUE = 'omit'
@@ -42,7 +44,7 @@ BUS_STOPS_UPSERTED = {}
 BUS_STOPS_NOT_UPSERTED = {}
 DATA_CREATED = {}
 DATA_UPDATED = {}
-CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS, "Unsuccessfull bus stop upserts": BUS_STOPS_NOT_UPSERTED}
+DATA_ERRORS = {}
 
 # Query for all datasets in the entire catalog via metadata API (https://socratametadataapi.docs.apiary.io/#)
 def getAllDatasetsInCatalog():
@@ -112,6 +114,11 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
     INVALID_URLS[entryThumbPrint['FeedID']] = [
       entryThumbPrint['Name'],
       "URL: " + url,
+      Message
+    ]
+  elif action == ERROR_ACTION:
+    DATA_ERRORS[entryThumbPrint['FeedID']] = [
+      entryThumbPrint['Name'],
       Message
     ]
 
@@ -435,7 +442,7 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
       }
   })
   update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-    
+
   # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
   if fetchLinkResponseIfValid != None:
     ##########################
@@ -517,15 +524,21 @@ def updateCatalog(agencyFeedDatasetFourFour):
   agencyFeedResponse = requests.get(api_request, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
+
+    agencyFeedThumbPrint = getAgencyFeedThumbPrint(agencyFeedRow)
     agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'], allDatasetsInCatalog)
-    if agencyFeedRowFourfour == None:
-      revision_response = revision(None, agencyFeedRow, makeDatasetPublic)
-      if revision_response != None:
-        updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
-    else:
-      revision_response = revision(agencyFeedRowFourfour, agencyFeedRow, makeDatasetPublic)
-      if revision_response != None:
-        updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
+
+    try:
+      if agencyFeedRowFourfour == None:
+        revision_response = revision(None, agencyFeedRow, makeDatasetPublic)
+        if revision_response != None:
+          updateChangeLog(agencyFeedThumbPrint, CREATE_ACTION)
+      else:
+        revision_response = revision(agencyFeedRowFourfour, agencyFeedRow, makeDatasetPublic)
+        if revision_response != None:
+          updateChangeLog(agencyFeedThumbPrint, UPDATE_ACTION)
+    except Exception as e:
+      updateChangeLog(agencyFeedThumbPrint, ERROR_ACTION, "Failed to create or update agency dataset: " + str(e))
         
 def stringifyErrorLines(logDict):
   errorLines = ""
@@ -534,11 +547,18 @@ def stringifyErrorLines(logDict):
   return errorLines
 
 def getLogsForLogDataset():
-  statsLines =  f'Agencies Created: {len(DATA_CREATED.keys())}'
-  statsLines += f'Agencies Updated: {len(DATA_UPDATED.keys())}'
-  statsLines += f'Agencies With Upserted Bus Stops: {len(BUS_STOPS_UPSERTED.keys())}'
-  statsLines += f'Agencies Failed Upserted Bus Stops: {len(BUS_STOPS_NOT_UPSERTED.keys())}'
-  return statsLines + "\n\n" + stringifyErrorLines(CHANGE_LOG["Invalid GTFS URLs"]) + "\n\n" + stringifyErrorLines(CHANGE_LOG["Unsuccessfull bus stop upserts"])
+  statsLines =  f'Agencies Created: {len(DATA_CREATED.keys())}\n'
+  statsLines += f'Agencies Updated: {len(DATA_UPDATED.keys())}\n'
+  statsLines += f'Agencies With Upserted Bus Stops: {len(BUS_STOPS_UPSERTED.keys())}\n'
+  
+  statsLines += "\n----------------------------\n"
+  statsLines += f'Agencies That Could Not Be Published ({len(DATA_ERRORS.keys())}):\n{stringifyErrorLines(DATA_ERRORS)}'
+  statsLines += "\n----------------------------\n"
+  statsLines += f'Agencies With Invalid GTFS URLs ({len(INVALID_URLS.keys())}):\n{stringifyErrorLines(INVALID_URLS)}'
+  statsLines += "\n----------------------------\n"
+  statsLines += f'Agencies Failed Upserted Bus Stops ({len(BUS_STOPS_NOT_UPSERTED.keys())}):\n{stringifyErrorLines(BUS_STOPS_NOT_UPSERTED)}'
+
+  return statsLines
 
 def updateLogDataset(successfullRun, errors):
   print("Writing to private log dataset")
@@ -572,16 +592,16 @@ def Main():
       updateTransitStopDataset()
       successfulRun = True
     else:
-      errors = "You must pass either 'catalog' or 'stops_map' as the argument"
+      errors = "You must pass either 'catalog', 'catalog_test', or 'stops_map' as the argument"
       print(errors)
   except Exception as e:
     errors = str(e)
     print("Fatal error: " + errors)
 
-  updateLogDataset(successfulRun,errors)
-
-  with open('CHANGE_LOG.txt', 'w') as f:
-    f.write(json.dumps(CHANGE_LOG, indent=4))
+  try:
+    updateLogDataset(successfulRun,errors)
+  except Exception as e:
+    print("Error publishing to log dataset. Outputting all log info in console:\n\n" + getLogsForLogDataset())
   
 
 Main()
