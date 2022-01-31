@@ -17,9 +17,8 @@ STANDARD_HEADERS = { 'Content-Type': 'application/json' }
 UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
 
-AGENCY_FEED_TEST_DATASET_ID = 'dw2s-2w2x' # Test dataset with 3 rows 
-AGENCY_FEED_ALL_DATASET_ID = 'ymsd-c3s5'  # All NTM agency records
-AGENCY_FEED_DATASET_ID = AGENCY_FEED_ALL_DATASET_ID
+AGENCY_FEED_FOURFOUR = 'ymsd-c3s5'      # All NTM agency records
+AGENCY_FEED_FOURFOUR_TEST = 'dw2s-2w2x' # Test dataset with 3 rows
 
 ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
 LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
@@ -404,11 +403,11 @@ def setMetadata(agencyFeedRow, fetchLinkErrorMessage):
   }
 
 
-# 'fourfour' is the dataset ID of an existing dataset to update/replace
-#the parameter variable 'set' is one row in the dataset that represents a "source" of data from some city somewhere
-def revision(fourfour, agencyFeedRow):
+# fourfour: the dataset ID of an existing dataset to update/replace, or create new dataset if 'fourfour' is None
+# agencyFeedRow: one row in the agency feeda dataset (represents a single "source" agency)
+def revision(fourfour, agencyFeedRow, makeDatasetPublic):
   fetchLinkZipFileUrl = getMetadataFieldIfExists('fetch_link', agencyFeedRow)
-  fetchLinkResponseIfValid,fetchLinkErrorMessage = urlIsValid(fetchLinkZipFileUrl)
+  fetchLinkResponseIfValid,fetchLinkErrorMessage = getUrlIfValid(fetchLinkZipFileUrl)
 
   if fetchLinkZipFileUrl != "" and fetchLinkErrorMessage != None:
     updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), INVALID_URL_ACTION, Message=fetchLinkErrorMessage, url=fetchLinkZipFileUrl)
@@ -427,13 +426,12 @@ def revision(fourfour, agencyFeedRow):
     url_for_step_1_post = f'{revision_url}/{fourfour}'
     print("Updating dataset for " + agencyFeedRow['agency_name'] + " (" + url_for_step_1_post + ")")
 
-  permission = 'public'
   metadata = setMetadata(agencyFeedRow, fetchLinkErrorMessage)
   body = json.dumps({
     'metadata': metadata,
       'action': {
         'type': action_type,
-        'permission': permission
+        'permission': 'public' if (makeDatasetPublic) else 'private'
       }
   })
   update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
@@ -508,6 +506,7 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id, allDatasetsInCatalo
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
 def updateCatalog(agencyFeedDatasetFourFour):
+  makeDatasetPublic = True if (agencyFeedDatasetFourFour == AGENCY_FEED_FOURFOUR) else False
 
   allDatasetsInCatalog = getAllDatasetsInCatalog()
 
@@ -520,11 +519,11 @@ def updateCatalog(agencyFeedDatasetFourFour):
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
     agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'], allDatasetsInCatalog)
     if agencyFeedRowFourfour == None:
-      revision_response = revision(None, agencyFeedRow)
+      revision_response = revision(None, agencyFeedRow, makeDatasetPublic)
       if revision_response != None:
         updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), CREATE_ACTION)
     else:
-      revision_response = revision(agencyFeedRowFourfour, agencyFeedRow)
+      revision_response = revision(agencyFeedRowFourfour, agencyFeedRow, makeDatasetPublic)
       if revision_response != None:
         updateChangeLog(getAgencyFeedThumbPrint(agencyFeedRow), UPDATE_ACTION)
         
@@ -564,7 +563,10 @@ def Main():
 
   try:
     if "catalog" in sys.argv:
-      updateCatalog()
+      updateCatalog(AGENCY_FEED_FOURFOUR)
+      successfulRun = True
+    elif "catalog_test" in sys.argv:
+      updateCatalog(AGENCY_FEED_FOURFOUR_TEST)
       successfulRun = True
     elif "stops_map" in sys.argv:
       updateTransitStopDataset()
