@@ -24,6 +24,8 @@ AGENCY_FEED_DATASET_ID = AGENCY_FEED_ALL_DATASET_ID
 ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
 LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
 
+HTTP_REQUEST_TIMEOUT_SECS = 600 # 10 minutes
+
 UPDATE_ACTION = 'update'
 CREATE_ACTION = 'create'
 BUS_UPSERT_ACTION  = 'bus stop upsert'
@@ -43,16 +45,15 @@ DATA_CREATED = {}
 DATA_UPDATED = {}
 CHANGE_LOG = {"Data created" : DATA_CREATED, "Data updated" : DATA_UPDATED, "Bus stop upsertion attempts": BUS_STOPS_UPSERTED, "Invalid GTFS URLs": INVALID_URLS, "Unsuccessfull bus stop upserts": BUS_STOPS_NOT_UPSERTED}
 
-# Query for all datasets in the entire catalog
-CURRENT_CATALOG_QUERY = DOMAIN_URL + "/api/views/metadata/v1.json" 
-CURRENT_CATALOG = json.loads(requests.get(CURRENT_CATALOG_QUERY, headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
+# Query for all datasets in the entire catalog via metadata API (https://socratametadataapi.docs.apiary.io/#)
+def getAllDatasetsInCatalog():
+  return json.loads(requests.get(DOMAIN_URL + "/api/views/metadata/v1.json", timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS).content)
 
 # This function takes in a catalog entry and returns its "thumbprint" that can be used to update the changelog
 def getCatalogThumbPrint(catalogRow):
   thumbPrint = {}
   thumbPrint['Name'] = catalogRow['name']
   thumbPrint['FeedID'] = getCatalogEntryFeedID(catalogRow['description'])
-  thumbPrint['Fourfour'] = catalogRow['id']
   return thumbPrint
 
 # This function takes in an agencyFeedRow and returns its "thumbprint" that can be used to update the changelog
@@ -60,14 +61,13 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
   thumbPrint = {}
   thumbPrint['Name'] = agencyFeedRow['agency_name']
   thumbPrint['FeedID'] = agencyFeedRow['feed_id']
-  thumbPrint['Fourfour'] = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
   return thumbPrint
 
 # Checks if the given URL is reachable and if so returns <GET request response object/data>, None
 # If URL has issues return: None, <error message>
-def urlIsValid(url):
+def getUrlIfValid(url):
   try:
-    get = requests.get(url)
+    get = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECS)
     if get.ok:
       return get, None
     else:
@@ -95,8 +95,7 @@ def updateChangeLog(entryThumbPrint, action, Message='',url='',busNumbers={}):
     ]
   elif action == UPDATE_ACTION:
     DATA_UPDATED[entryThumbPrint['FeedID']] = [
-      entryThumbPrint['Name'],
-      DOMAIN_URL + "/d/" + entryThumbPrint['Fourfour']
+      entryThumbPrint['Name']
     ]
   elif action == BUS_UPSERT_ACTION:
     BUS_STOPS_UPSERTED[entryThumbPrint['FeedID']] = [
@@ -255,7 +254,7 @@ def makeStopLine(stopFileLine,feedID,stopsObject):
 def locateDeletions(catalogRowThumbPrint, stopsObject):
   # Getting the catalogStop data from the ALL_STOP_LOCATIONS dataset
   relevantStopsEndpoint = ALL_STOP_LOCATIONS_ENDPOINT + ".json?$where=starts_with(feed_id_stop_id, '" + catalogRowThumbPrint['FeedID'] + "')"
-  relevantStopsRequest = requests.get(relevantStopsEndpoint, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+  relevantStopsRequest = requests.get(relevantStopsEndpoint, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
   relevantStops = json.loads(relevantStopsRequest.content.decode('UTF-8'))
   catalogDict = {}
   for catalogStop in relevantStops:
@@ -285,7 +284,7 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
   
   stopsToDelete = locateDeletions(catalogRowThumbPrint, stopsObject)
   if len(stopsToDelete) > 0:
-    deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), {}, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    deleteCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, json.dumps(stopsToDelete), {}, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
     #requestResults = requestResults + "\n" + deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].replace('"','')
     requestResults['Rows Deleted'] = int(deleteCatalogEntryBusStopsRequest.content.decode('UTF-8').split("\n")[4].split(":")[1])
   
@@ -295,7 +294,7 @@ def deleteIfNecessary(catalogRowThumbPrint,stopsObject,requestResults):
 # busStopEntry in the catalog, that busStop is added
 # updateTransitStopDataset() MUST be run AFTER updateCatalog() since this function scans the current catalog for updates to make to the bus stop data.
 def updateTransitStopDataset():
-  for catalogRow in CURRENT_CATALOG: 
+  for catalogRow in getAllDatasetsInCatalog(): 
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       catalogEntryFetchLink = getFetchLinkUrl(catalogRow['description'])
 
@@ -307,7 +306,7 @@ def updateTransitStopDataset():
         # then, the stops.txt file can be iterated through and stops from it can be added to the 'allCatalogBusStops' by upserting them
         catalogRowThumbPrint = getCatalogThumbPrint(catalogRow)
         try:
-          zipRequest = requests.get(catalogEntryFetchLink)
+          zipRequest = requests.get(catalogEntryFetchLink, timeout=HTTP_REQUEST_TIMEOUT_SECS)
           with open(TEMPZIP_FILENAME, "wb") as zip:
             zip.write(zipRequest.content)
           z = zipfile.ZipFile(TEMPZIP_FILENAME, "r")
@@ -336,11 +335,11 @@ def updateTransitStopDataset():
             invalidLines = invalidLines + newStopLine['line']
 
         try:
-          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, {}, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+          postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData, {}, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
           requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
         except Exception as e:
           try:
-            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), {}, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+            postCatalogEntryBusStopsRequest = requests.post(ALL_STOP_LOCATIONS_ENDPOINT, newStopData.encode('utf-8'), {}, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
             requestResults = json.loads(postCatalogEntryBusStopsRequest.content.decode('UTF-8'))
           except Exception as e:
             print("Exception when upserting stop locations from " + catalogRow['name'] + ": " + str(e))
@@ -437,7 +436,7 @@ def revision(fourfour, agencyFeedRow):
         'permission': permission
       }
   })
-  update_revision_response = requests.post(url_for_step_1_post, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
     
   # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
   if fetchLinkResponseIfValid != None:
@@ -463,7 +462,7 @@ def revision(fourfour, agencyFeedRow):
       }
     })
     
-    source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+    source_response = requests.post(create_source_url, data=source_json, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
     ##########################
     ### Step 3: Upload File to source_type
@@ -471,7 +470,7 @@ def revision(fourfour, agencyFeedRow):
     bytes = fetchLinkResponseIfValid.content
     upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
     upload_url = f'{DOMAIN_URL}{upload_uri}'
-    upload_response = requests.post(upload_url, data=bytes, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+    upload_response = requests.post(upload_url, data=bytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
 
 
   #########
@@ -485,15 +484,15 @@ def revision(fourfour, agencyFeedRow):
       'id': revision_number
     }
   })
-  apply_revision_response = requests.put(apply_revision_url, data=body, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  apply_revision_response = requests.put(apply_revision_url, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   return apply_revision_response
 
 
 # Takes in a row of incoming dataset metadata and iterates through the current catalog, looking for a matching feedID 
 # in the catalog entries descriptions.
 # Returns a fourfour if it finds a matching FeedID, returns None if no matching FeedID is found
-def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
-  for catalogRow in CURRENT_CATALOG:
+def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id, allDatasetsInCatalog):
+  for catalogRow in allDatasetsInCatalog:
     if catalogRow['tags'] != None and 'national transit map' in catalogRow['tags']:
       if catalogRow['description'] == None: #this might be the issue
         existingFeedID = None # Otherwise, we get an error when running getCatalogEntryFeedID on the row
@@ -508,15 +507,18 @@ def getFourfourFromCatalogonMatchingFeedID(incoming_feed_id):
 # This is the highest level function that takes in the data, iterates through it, 
 # checking the field for the fourfour and deciding whether or not to create or update
 # each row of data
-def updateCatalog():
-  api_request = DOMAIN_URL + "/resource/" + AGENCY_FEED_DATASET_ID + ".json"
+def updateCatalog(agencyFeedDatasetFourFour):
+
+  allDatasetsInCatalog = getAllDatasetsInCatalog()
+
+  api_request = DOMAIN_URL + "/resource/" + agencyFeedDatasetFourFour + ".json"
   api_request += "?$where=have_consent_for_ntm=True" # Filter to only import feeds where Consent field is TRUE
 
   # agencyFeedResponse below is the incoming data that is being added to or changed in the NTDBTS catalog
-  agencyFeedResponse = requests.get(api_request, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  agencyFeedResponse = requests.get(api_request, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
   
   for agencyFeedRow in json.loads(agencyFeedResponse.content):
-    agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'])
+    agencyFeedRowFourfour = getFourfourFromCatalogonMatchingFeedID(agencyFeedRow['feed_id'], allDatasetsInCatalog)
     if agencyFeedRowFourfour == None:
       revision_response = revision(None, agencyFeedRow)
       if revision_response != None:
@@ -540,6 +542,7 @@ def getLogsForLogDataset():
   return statsLines + "\n\n" + stringifyErrorLines(CHANGE_LOG["Invalid GTFS URLs"]) + "\n\n" + stringifyErrorLines(CHANGE_LOG["Unsuccessfull bus stop upserts"])
 
 def updateLogDataset(successfullRun, errors):
+  print("Writing to private log dataset")
   if successfullRun == True:
     logging = getLogsForLogDataset()
   else:
@@ -552,13 +555,13 @@ def updateLogDataset(successfullRun, errors):
       "log": logging
     }
   ]
-  requestResults = requests.post(LOG_DATASET_ENDPOINT, json.dumps(newRun), {}, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  requestResults = requests.post(LOG_DATASET_ENDPOINT, json.dumps(newRun), {}, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
 
 def Main():
   successfulRun = False
   errors = ""
-  
+
   try:
     if "catalog" in sys.argv:
       updateCatalog()
@@ -571,6 +574,7 @@ def Main():
       print(errors)
   except Exception as e:
     errors = str(e)
+    print("Fatal error: " + errors)
 
   updateLogDataset(successfulRun,errors)
 
