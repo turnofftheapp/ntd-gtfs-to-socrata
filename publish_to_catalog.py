@@ -69,13 +69,13 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
 def getUrlIfValid(url):
   try:
     get = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECS)
+
     if get.ok:
       return get, None
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
   except Exception as e:
     errorMessage = getattr(e, 'message', repr(e))
-
   return None, errorMessage
 
 # From: https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45
@@ -444,7 +444,7 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
   update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
   # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
-  if fetchLinkResponseIfValid != None:
+  if fetchLinkResponseIfValid != None: # There is still a case here where the link provided might actually be pointing to some sort of folder online, as opposed to being a broken link. In this case, its still technically not a zip file link, so I assume we will want to handle that and so this if statement will need to be different.
     ##########################
     ### Step 2: Create new source
     ##########################
@@ -473,6 +473,40 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
     ### Step 3: Upload File to source_type
     ##########################
     bytes = fetchLinkResponseIfValid.content
+    upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+    upload_url = f'{DOMAIN_URL}{upload_uri}'
+    upload_response = requests.post(upload_url, data=bytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+  else: # Here, since there was an issue with the URL, we will upload a dummy zip
+    ##########################
+    ### Step 2: Create new source
+    ##########################
+    create_source_uri = update_revision_response.json()['links']['create_source']
+    create_source_url = f'{DOMAIN_URL}{create_source_uri}'
+
+    filename = "GTFS_PLACEHOLDER.zip"
+    revision_source_type = 'upload'
+
+    parse_source = False
+
+    source_json = json.dumps({
+      'source_type': {
+        'type': revision_source_type,
+        'filename': filename
+      },
+      'parse_options': {
+        'parse_source': parse_source
+      }
+    })
+    
+    source_response = requests.post(create_source_url, data=source_json, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+
+    ##########################
+    ### Step 3: Upload File to source_type
+    ##########################
+    with open(filename, 'rb') as file_data:
+      bytes = file_data.read()
+    #print("right after the big file open test")
+    #pdb.set_trace()
     upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
     upload_url = f'{DOMAIN_URL}{upload_uri}'
     upload_response = requests.post(upload_url, data=bytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
