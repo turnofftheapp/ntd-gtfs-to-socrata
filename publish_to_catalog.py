@@ -19,7 +19,7 @@ DOMAIN_URL = 'https://data.bts.gov'
 
 AGENCY_FEED_FOURFOUR = 'ymsd-c3s5'      # All NTM agency records
 AGENCY_FEED_FOURFOUR_TEST = 'dw2s-2w2x' # Test dataset with 3 rows
-DUMMY_ZIP_LINK = "https://github.com/turnofftheapp/ntd-gtfs-to-socrata/blob/main/GTFS_PLACEHOLDER.zip" #To be used as the GTFS link when creating a dataset that has no provided GTFS link
+DUMMY_ZIP_LINK = "https://github.com/turnofftheapp/ntd-gtfs-to-socrata/blob/main/GTFS_PLACEHOLDER.zip?raw=true" #To be used as the GTFS link when creating a dataset that has no provided GTFS link. This is a blob
 
 ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
 LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
