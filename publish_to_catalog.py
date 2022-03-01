@@ -443,7 +443,7 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
       }
   })
   update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
-  pdb.set_trace()
+
   # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
   if fetchLinkResponseIfValid != None: # There is still a case here where the link provided might actually be pointing to some sort of folder online, as opposed to being a broken link. In this case, its still technically not a zip file link, so I assume we will want to handle that and so this if statement will need to be different.
     ##########################
@@ -512,8 +512,7 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
     upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
     upload_url = f'{DOMAIN_URL}{upload_uri}'
     upload_response = requests.post(upload_url, data=bytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-    print("right after put statement")
-    pdb.set_trace()
+    
 
 
   #########
