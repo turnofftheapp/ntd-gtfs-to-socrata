@@ -18,7 +18,8 @@ UPLOAD_HEADERS = { 'Content-Type': 'text/csv' }
 DOMAIN_URL = 'https://data.bts.gov'
 
 AGENCY_FEED_FOURFOUR = 'ymsd-c3s5'      # All NTM agency records
-AGENCY_FEED_FOURFOUR_TEST = 'dw2s-2w2x' # Test dataset with 3 rows
+AGENCY_FEED_FOURFOUR_TEST = 'x87r-3ckx' # Test dataset with 3 rows
+DUMMY_ZIP_LINK = "https://github.com/turnofftheapp/ntd-gtfs-to-socrata/blob/main/GTFS_PLACEHOLDER.zip?raw=true" #To be used as the GTFS link when creating a dataset that has no provided GTFS link. This is a blob
 
 ALL_STOP_LOCATIONS_ENDPOINT = DOMAIN_URL + '/resource/39cr-5x89'
 LOG_DATASET_ENDPOINT = DOMAIN_URL + '/resource/ngsm-beqg'
@@ -69,13 +70,13 @@ def getAgencyFeedThumbPrint(agencyFeedRow):
 def getUrlIfValid(url):
   try:
     get = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECS)
+
     if get.ok:
       return get, None
     else:
       errorMessage = f"{url}: is Not reachable, status_code: {get.status_code}"
   except Exception as e:
     errorMessage = getattr(e, 'message', repr(e))
-
   return None, errorMessage
 
 # From: https://github.com/django/django/blob/stable/1.3.x/django/core/validators.py#L45
@@ -443,40 +444,43 @@ def revision(fourfour, agencyFeedRow, makeDatasetPublic):
   })
   update_revision_response = requests.post(url_for_step_1_post, data=body, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
-  # Do not upload .ZIP file for this catalog record if the fetch_link was missing or response was invalid
-  if fetchLinkResponseIfValid != None:
-    ##########################
-    ### Step 2: Create new source
-    ##########################
-    create_source_uri = update_revision_response.json()['links']['create_source']
-    create_source_url = f'{DOMAIN_URL}{create_source_uri}'
+  if fetchLinkResponseIfValid == None:
+    # Upload Dummy .ZIP file for this catalog record if the fetch_link was missing or response was invalid
+    filename = "GTFS_PLACEHOLDER.zip"
+    dummyZipResponse, dummyZipErrorMessage = getUrlIfValid(DUMMY_ZIP_LINK)
+    datasetFileBytes = dummyZipResponse.content
+  else:
+    filename = agencyFeedRow['ntd_id'] + " " + datetime.now().strftime("%Y-%m-%d") + '.zip'
+    datasetFileBytes = fetchLinkResponseIfValid.content
 
-    now = datetime.now().strftime("%Y-%m-%d")
-    filename = agencyFeedRow['ntd_id'] + " " + now + '.zip' 
-    revision_source_type = 'upload'
+  ##########################
+  ### Step 2: Create new source
+  ##########################
+  create_source_uri = update_revision_response.json()['links']['create_source']
+  create_source_url = f'{DOMAIN_URL}{create_source_uri}'
 
-    parse_source = False
+  revision_source_type = 'upload'
+  parse_source = False
 
-    source_json = json.dumps({
-      'source_type': {
-        'type': revision_source_type,
-        'filename': filename
-      },
-      'parse_options': {
-        'parse_source': parse_source
-      }
-    })
-    
-    source_response = requests.post(create_source_url, data=source_json, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
+  source_json = json.dumps({
+    'source_type': {
+      'type': revision_source_type,
+      'filename': filename
+    },
+    'parse_options': {
+      'parse_source': parse_source
+    }
+  })
+  
+  source_response = requests.post(create_source_url, data=source_json, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=STANDARD_HEADERS, auth=CREDENTIALS)
 
-    ##########################
-    ### Step 3: Upload File to source_type
-    ##########################
-    bytes = fetchLinkResponseIfValid.content
-    upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
-    upload_url = f'{DOMAIN_URL}{upload_uri}'
-    upload_response = requests.post(upload_url, data=bytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
-
+  ##########################
+  ### Step 3: Upload File to source_type
+  ##########################
+  upload_uri = source_response.json()['links']['bytes'] # Get the link for uploading bytes from your source response
+  upload_url = f'{DOMAIN_URL}{upload_uri}'
+  upload_response = requests.post(upload_url, data=datasetFileBytes, timeout=HTTP_REQUEST_TIMEOUT_SECS, headers=UPLOAD_HEADERS, auth=CREDENTIALS)
+  
 
   #########
   #Step 4: Apply revision (publishes changes)
