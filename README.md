@@ -30,7 +30,6 @@ python3 publish_to_catalog.py stops_map
 - [NTM: National Transit Map - All Agency Feeds](https://data.bts.gov/Public-Transit/NTM-National-Transit-Map-All-Agency-Feeds/ymsd-c3s5): Public dataset with GTFS feeds for all transit agencies in the NTM.
 - [National Transit Map - Map of All Stop Locations](https://data.bts.gov/Public-Transit/National-Transit-Map-Map-of-All-Stop-Locations/dgzr-qn6a): Dataset that visualizes NTM transit stops on a nationwide map.
 - [NTM - PRIVATE: Ingest Script Log](https://data.bts.gov/Public-Transit/NTM-PRIVATE-Ingest-Script-Log/ngsm-beqg): Private dataset that records a record each time the ingest script has been run.
-- [NTM - PRIVATE: Ingest Script Log](https://data.bts.gov/Public-Transit/NTM-PRIVATE-Ingest-Script-Log/ngsm-beqg): Private dataset that records a record each time the ingest script has been run.
 - [NTM - PRIVATE: TEST DATASET for Agency Feeds](https://data.bts.gov/dataset/NTM-PRIVATE-TEST-DATASET-for-Agency-Feeds/x87r-3ckx): Private dataset that allows running the script in test mode (`python3 publish_to_catalog.py catalog_test`) on fake agency data.
 
 ## Get in touch
